@@ -128,7 +128,8 @@ export const shaders = (params: Params) => ({
     vec3 root_color(vec2 z, float n) {
       float p = float(${params.brightnessFactor}); // color brightness factor
       float m = 1.0 - (exp(p * n / float(MAX_ITERS)) - 1.0) / (exp(p) - 1.0);
-      float hue = cplx_arg(z) / 6.2831853072 * float(${params.colorAngleFactor});
+      float hue = cplx_arg(z) / 6.2831853 + float(${params.colorShift});
+
       return hsv2rgb(vec3(hue, 1.0, m));
     }
 

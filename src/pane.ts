@@ -6,7 +6,7 @@ export const createPane = () => {
   const params = {
     'f(z)': functions[0],
     'custom function': 'z^2 - 1',
-    'color factor': 1,
+    'color shift': 1,
     'max iterations': 50,
     'convergence threshold': 0.001,
     'brightness factor': 4,
@@ -14,7 +14,7 @@ export const createPane = () => {
 
   const genParams = (ps: typeof params): Params => ({
     function: funcOf(ps['f(z)'] === 'custom' ? ps['custom function'] : ps['f(z)']),
-    colorAngleFactor: ps['color factor'],
+    colorShift: ps['color shift'],
     maxIterations: ps['max iterations'],
     convergencePrecision: ps['convergence threshold'],
     brightnessFactor: -ps['brightness factor'],
@@ -40,7 +40,7 @@ export const createPane = () => {
 
   pane.addInput(
     params,
-    'color factor',
+    'color shift',
     { min: 0, max: Math.PI }
   );
 

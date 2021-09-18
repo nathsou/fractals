@@ -2,7 +2,7 @@ import { C1Func } from "./functions";
 
 export interface Params {
   function: C1Func,
-  colorAngleFactor: number,
+  colorShift: number,
   brightnessFactor: number,
   maxIterations: number,
   convergencePrecision: number,
