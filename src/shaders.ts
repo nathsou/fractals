@@ -24,7 +24,7 @@ export const shaders = (params: Params) => ({
 
     varying vec2 v_pos;
 
-    vec2 cplx_mult(in vec2 a, in vec2 b) {
+    vec2 cplx_mult(vec2 a, vec2 b) {
       return vec2(a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y);
     }
 
@@ -38,9 +38,7 @@ export const shaders = (params: Params) => ({
     }
 
     float cplx_arg(vec2 z) {
-      float s = 1.0;
-      if (z.y < 0.0) {s = -1.0;}
-      return s * acos(z.x / length(z));
+      return atan(z.y, z.x);
     }
 
     vec2 cplx_pow_scalar(vec2 z, float p) {
@@ -104,19 +102,13 @@ export const shaders = (params: Params) => ({
       return z - t2 + t3 - t4 + t5 - t6 + t7 - t8;
     }
 
-    vec2 f(vec2 z) {
-      return ${params.function.f};
-    }
-
     vec3 newton_method(vec2 z0, float eps) {
       vec2 z = vec2(z0);
-      vec2 delta = vec2(eps) + vec2(1.0);
-      vec2 df = vec2(0.0);
       float n = 0.0;
 
       for (int j = 0; j < MAX_ITERS; j++) {
-        df = ${params.function.df};
-        delta = cplx_div(f(z), df);
+        vec2 df = ${params.function.df};
+        vec2 delta = cplx_div(${params.function.f}, df);
         z -= delta;
         n++;
 
