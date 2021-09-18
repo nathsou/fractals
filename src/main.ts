@@ -190,13 +190,18 @@ const createApp = (width: number, height: number, params: Params, originalScale 
   };
 };
 
-const pane = createPane();
+(async () => {
+  /// @ts-ignore
+  await import('nerdamer/Calculus.js');
 
-const app = createApp(
-  window.innerWidth,
-  window.innerHeight,
-  pane.params(),
-  1
-);
+  const pane = createPane();
 
-pane.onChange(app.updateParams);
+  const app = createApp(
+    window.innerWidth,
+    window.innerHeight,
+    pane.params(),
+    1
+  );
+
+  pane.onChange(app.updateParams);
+})();

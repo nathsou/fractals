@@ -1,9 +1,6 @@
 import { Complex } from "./complex";
 import nerdamer from 'nerdamer';
 
-/// @ts-ignore
-await import('nerdamer/Calculus.js');
-
 export type C1Func = {
   f: string,
   native: (z: Complex) => Complex,
