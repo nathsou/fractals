@@ -140,8 +140,6 @@ export const shaders = (params: Params) => ({
       if (r.z > 0.0) {
         float m = r.z / float(MAX_ITERS);
         color = mix(root_color(vec2(r.x, r.y), r.z), vec3(0.0), m);
-      } else {
-        color = vec3(0.0);
       }
   
       gl_FragColor = vec4(color, 1.0);

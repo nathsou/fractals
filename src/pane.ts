@@ -6,7 +6,7 @@ export const createPane = () => {
   const params = {
     'f(z)': functions[0],
     'custom function': 'z^2 - 1',
-    'color shift': 1,
+    'color shift': 1.6,
     'max iterations': 50,
     'convergence threshold': 0.001,
     'brightness factor': 4,
