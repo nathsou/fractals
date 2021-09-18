@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Newton Fractals</title>
+</head>
+
+<style>
+  html,
+  canvas,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
+  #cnv {
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+
+  canvas,
+  #pane {
+    position: absolute;
+    z-index: 100;
+  }
+
+  #pane {
+    right: 0px;
+    padding: 4px;
+  }
+
+  #overlay {
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+
+  #download-link {
+    display: none;
+  }
+</style>
+
+<body>
+  <canvas id='cnv'></canvas>
+  <canvas id='overlay'></canvas>
+  <div id='pane' />
+  <script type="module" src="/src/main.ts"></script>
+  <a href='#' id='download-link' download='newton.png'></a>
+</body>
+
+</html>
