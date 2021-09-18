@@ -107,8 +107,7 @@ export const shaders = (params: Params) => ({
       float n = 0.0;
 
       for (int j = 0; j < MAX_ITERS; j++) {
-        vec2 df = ${params.function.df};
-        vec2 delta = cplx_div(${params.function.f}, df);
+        vec2 delta = cplx_div(${params.function.f}, ${params.function.df});
         z -= delta;
         n++;
 
