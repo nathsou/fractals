@@ -2,6 +2,8 @@
 
 Interactive Newton fractals renderer in WebGL
 
+[Click to try](https://nathsou.github.io/fractals/)
+
 Features :
 
 - Pan and zoom freely
