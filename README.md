@@ -6,7 +6,7 @@ Interactive Newton fractals renderer in WebGL
 
 Features :
 
-- Pan and zoom freely
+- Pan and zoom freely (both on desktop and touchscreens)
 - Custom function input
 - Click anywhere to draw sucessive approximations starting at the mouse position
 

@@ -41,6 +41,68 @@ const drawPath = (
   }
 };
 
+type PinchListener = (centerX: number, centerY: number, newScale: number) => void;
+
+const createPinchZoomHandler = () => {
+  const pointers = new Map<number, PointerEvent>();
+  let lastDist = 0;
+  let lastScale = 1;
+
+  const removeEvent = (ev: PointerEvent) => {
+    pointers.delete(ev.pointerId);
+  };
+
+  const onPointerDown = (ev: PointerEvent) => {
+    pointers.set(ev.pointerId, ev);
+  };
+
+  const onPointerUp = (ev: PointerEvent) => {
+    lastDist = 0;
+    removeEvent(ev);
+  };
+
+  const pinchListeners: PinchListener[] = [];
+
+  const addPinchListener = (listener: PinchListener): void => {
+    pinchListeners.push(listener);
+  };
+
+  const onPointerMove = (ev: PointerEvent) => {
+    pointers.set(ev.pointerId, ev);
+
+    if (pointers.size === 2) {
+      const [e1, e2] = [...pointers.values()];
+
+      const dist = Math.sqrt((e2.clientX - e1.clientX) ** 2 + (e2.clientY - e1.clientY) ** 2);
+
+      if (lastDist === 0) {
+        lastDist = dist;
+      }
+
+
+      const scale = lastScale * (dist / lastDist);
+
+      const centerX = (e2.clientX + e1.clientX) / 2;
+      const centerY = (e2.clientY + e1.clientY) / 2;
+
+      for (const listener of pinchListeners) {
+        listener(centerX, centerY, scale);
+      }
+
+      lastDist = dist;
+      lastScale = scale;
+    }
+  };
+
+  return {
+    addPinchListener,
+    onPointerDown,
+    onPointerUp,
+    onPointerMove,
+    isZooming: () => pointers.size === 2,
+  };
+};
+
 const createApp = (width: number, height: number, params: Params, originalScale = 1) => {
   const cnv = document.querySelector('#cnv') as HTMLCanvasElement;
   const overlay = document.querySelector('#overlay') as HTMLCanvasElement;
@@ -93,21 +155,31 @@ const createApp = (width: number, height: number, params: Params, originalScale 
     clickTimestamp: 0
   };
 
-  const onMouseDown = (ev: MouseEvent) => {
+  const pinch = createPinchZoomHandler();
+
+  const onPointerDown = (ev: PointerEvent): void => {
+    ev.preventDefault();
     isPanning = true;
     z0.value = posToCplx([ev.clientX, ev.clientY]);
     z0.clickTimestamp = Date.now();
     overlay.style.cursor = 'grab';
+    pinch.onPointerDown(ev);
   };
 
-  const onMouseUp = () => {
+  const onPointerCancel = (): void => {
     isPanning = false;
+    z0.value = Complex.NaN();
+    overlay.style.cursor = 'auto';
+  };
+
+  const onPointerUp = (ev: PointerEvent): void => {
+    ev.preventDefault();
     if (Date.now() - z0.clickTimestamp < 100) {
       drawPath(overlay, cplxToPos, params.function.native, z0.value);
     }
 
-    z0.value = Complex.NaN();
-    overlay.style.cursor = 'auto';
+    onPointerCancel();
+    pinch.onPointerUp(ev);
   };
 
   const renderer = createRenderer(cnv, params);
@@ -136,31 +208,42 @@ const createApp = (width: number, height: number, params: Params, originalScale 
     }
   };
 
-  const onMouseMove = (e: MouseEvent) => {
-    if (isPanning) {
-      const x = options.offset.x - e.movementX / (width * options.scale * 0.5);
-      const y = options.offset.y + e.movementY / (height * options.scale * 0.5);
+  const onPointerMove = (ev: PointerEvent) => {
+    ev.preventDefault();
+
+    if (pinch.isZooming()) {
+      pinch.onPointerMove(ev);
+    } else if (isPanning) {
+      const k = ev.pointerType === 'touch' ? 0.5 : 1;
+      const x = options.offset.x - k * ev.movementX / (width * options.scale * 0.5);
+      const y = options.offset.y + k * ev.movementY / (height * options.scale * 0.5);
       setOffset(x, y);
       update();
     }
   };
 
-  const onWheel = (e: WheelEvent) => {
-    e.preventDefault();
-    const newScale = options.scale * (e.deltaY < 0 ? 1.1 : 0.9);
+  const zoomInOut = (
+    centerX: number,
+    centerY: number,
+    newScale: number
+  ): void => {
     const [deltaX, deltaY] = zoomOffset(
-      2 * (e.clientX / width - 0.5),
-      2 * (-e.clientY / height + 0.5),
+      2 * (centerX / width - 0.5),
+      2 * (-centerY / height + 0.5),
       options.scale,
       newScale
     );
 
     options.scale = newScale;
-
     options.offset.x += deltaX;
     options.offset.y += deltaY;
-
     update();
+  };
+
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault();
+    const newScale = options.scale * (e.deltaY < 0 ? 1.1 : 0.9);
+    zoomInOut(e.clientX, e.clientY, newScale);
   };
 
   const onResize = (): void => {
@@ -173,11 +256,13 @@ const createApp = (width: number, height: number, params: Params, originalScale 
     update();
   };
 
-  overlay.addEventListener('mousedown', onMouseDown);
+  overlay.addEventListener('pointerdown', onPointerDown);
+  overlay.addEventListener('pointerup', onPointerUp);
+  overlay.addEventListener('pointercancel', onPointerCancel);
   overlay.addEventListener('wheel', onWheel);
-  window.addEventListener('mouseup', onMouseUp);
-  window.addEventListener('mousemove', onMouseMove);
+  overlay.addEventListener('pointermove', onPointerMove);
   window.addEventListener('resize', onResize);
+  pinch.addPinchListener(zoomInOut);
 
   update();
 
