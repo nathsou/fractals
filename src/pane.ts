@@ -10,15 +10,8 @@ export const createPane = () => {
     'max iterations': 50,
     'convergence threshold': 0.001,
     'brightness factor': 4,
+    'error': '',
   };
-
-  const genParams = (ps: typeof params): Params => ({
-    function: funcOf(ps['f(z)'] === 'custom' ? ps['custom function'] : ps['f(z)']),
-    colorShift: ps['color shift'],
-    maxIterations: ps['max iterations'],
-    convergencePrecision: ps['convergence threshold'],
-    brightnessFactor: -ps['brightness factor'],
-  });
 
   const pane = new Pane({
     container: document.querySelector('#pane') as HTMLElement,
@@ -38,11 +31,39 @@ export const createPane = () => {
     { disabled: true }
   );
 
+  const errorMessage = pane.addMonitor(params, 'error', {
+    multiline: true,
+    lineCount: 2,
+    hidden: true
+  });
+
+  const genParams = (ps: typeof params): Params => {
+    let f = funcOf('0'); // all black
+
+    try {
+      f = funcOf(ps['f(z)'] === 'custom' ? ps['custom function'] : ps['f(z)']);
+      errorMessage.hidden = true;
+    } catch (err) {
+      params.error = (err as any)?.message ?? '';
+      errorMessage.hidden = false;
+    }
+
+    return {
+      function: f,
+      colorShift: ps['color shift'],
+      maxIterations: ps['max iterations'],
+      convergencePrecision: ps['convergence threshold'],
+      brightnessFactor: -ps['brightness factor']
+    };
+  };
+
   pane.addInput(
     params,
     'color shift',
     { min: 0, max: Math.PI }
   );
+
+  pane.add
 
   pane.addInput(
     params,

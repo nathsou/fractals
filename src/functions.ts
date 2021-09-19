@@ -41,8 +41,13 @@ type FunctionExpr = {
 };
 
 type OptExpr =
-  UnaryOptExpr | BinopOptExpr | FunctionOptExpr
-  | ComplexNumOptExpr | RealNumberOptExpr | LiteralOptExpr;
+  UnaryOptExpr | BinopOptExpr | FunctionOptExpr |
+  ComplexNumOptExpr | RealNumberOptExpr | LiteralOptExpr | ParseError;
+
+type ParseError = {
+  type: 'error',
+  message: string,
+};
 
 type BinopOptExpr = {
   type: 'binary_op',
@@ -79,6 +84,7 @@ type ComplexNumOptExpr = {
   b: OptExpr,
 };
 
+
 const optimize = (expr: Expr): OptExpr => {
   switch (expr.type) {
     case 'VARIABLE_OR_LITERAL':
@@ -100,12 +106,39 @@ const optimize = (expr: Expr): OptExpr => {
             a: { type: 'real', x: Math.E },
             b: { type: 'real', x: 0 }
           };
-        default:
+        case 'pi':
           return {
             type: 'complex',
-            a: { type: 'real', x: Number(expr.value) },
+            a: { type: 'real', x: Math.PI },
             b: { type: 'real', x: 0 }
           };
+        case 'tau':
+          return {
+            type: 'complex',
+            a: { type: 'real', x: 2 * Math.PI },
+            b: { type: 'real', x: 0 }
+          };
+        case 'phi':
+          return {
+            type: 'complex',
+            a: { type: 'real', x: (1 + Math.sqrt(5)) / 2 },
+            b: { type: 'real', x: 0 }
+          };
+        default: {
+          const a = Number(expr.value);
+          if (Number.isNaN(a)) {
+            return {
+              type: 'error',
+              message: `unknown variable '${expr.value}'`
+            };
+          }
+
+          return {
+            type: 'complex',
+            a: { type: 'real', x: a },
+            b: { type: 'real', x: 0 }
+          };
+        }
       }
     case 'OPERATOR':
       switch (expr.value) {
@@ -380,14 +413,15 @@ const glslOf = (expr: OptExpr): string => {
     }
     case 'complex':
       return `vec2(${glslOf(expr.a)}, ${glslOf(expr.b)})`;
+    case 'error':
+      throw expr;
   }
+
 };
 
 const buildFunction = (expr: OptExpr) => (z: Complex) => evaluate(expr, z);
 
 export const funcOf = (expr: string): C1Func => {
-  console.log(glslOf(parse('3 * z^2')));
-
   const parsed = parse(expr);
   return {
     f: glslOf(parsed),
