@@ -46,7 +46,7 @@ type OptExpr =
 
 type BinopOptExpr = {
   type: 'binary_op',
-  op: '-' | '+' | '^' | '^x' | '*' | '/',
+  op: '-' | '+' | '^' | '^x' | '*' | '*x' | 'x*y' | '/',
   lhs: OptExpr,
   rhs: OptExpr,
 };
@@ -176,12 +176,33 @@ const optimize = (expr: Expr): OptExpr => {
           };
         }
         case '*':
-          return {
-            type: 'binary_op',
-            op: '*',
-            lhs: optimize(expr.left),
-            rhs: optimize(expr.right)
-          };
+          const lhs = optimize(expr.left);
+          const rhs = optimize(expr.right);
+
+          const isLhsReal =
+            lhs.type === 'complex'
+            && lhs.b.type === 'real'
+            && lhs.b.x === 0;
+
+          const isRhsReal =
+            rhs.type === 'complex'
+            && rhs.b.type === 'real'
+            && rhs.b.x === 0;
+
+
+          if (!isLhsReal && isRhsReal) {
+            return { type: 'binary_op', op: '*x', lhs, rhs };
+          }
+
+          if (isLhsReal && !isRhsReal) {
+            return { type: 'binary_op', op: '*x', lhs: rhs, rhs: lhs };
+          }
+
+          if (isLhsReal && isRhsReal) {
+            return { type: 'binary_op', op: 'x*y', lhs, rhs };
+          }
+
+          return { type: 'binary_op', op: '*', lhs, rhs };
         case '/':
           return {
             type: 'binary_op',
@@ -259,6 +280,10 @@ const evaluate = (expr: OptExpr, z: Complex): Complex => {
           return Complex.sub(lhs, rhs);
         case '*':
           return Complex.mult(lhs, rhs);
+        case '*x':
+          return Complex.times(lhs, rhs[0]);
+        case 'x*y':
+          return [lhs[0] * rhs[0], 0];
         case '/':
           return Complex.div(lhs, rhs);
         case '^':
@@ -292,6 +317,16 @@ const evaluate = (expr: OptExpr, z: Complex): Complex => {
 };
 
 const glslOf = (expr: OptExpr): string => {
+  const getX = (vec2: string): string => {
+    const match = /vec2\((\d*\.\d+), (\d*\.\d+)\)/.exec(vec2);
+
+    if (match !== null) {
+      return match[1];
+    } else {
+      return `${vec2}.x`;
+    }
+  };
+
   switch (expr.type) {
     case 'literal':
       return expr.name;
@@ -300,7 +335,7 @@ const glslOf = (expr: OptExpr): string => {
         case '-':
           return `(-1.0 * ${glslOf(expr.arg)})`;
       }
-    case 'binary_op':
+    case 'binary_op': {
       const lhs = glslOf(expr.lhs);
       const rhs = glslOf(expr.rhs);
 
@@ -311,14 +346,19 @@ const glslOf = (expr: OptExpr): string => {
           return `${lhs} - ${rhs}`;
         case '*':
           return `cplx_mult(${lhs}, ${rhs})`;
+        case '*x':
+          return `${lhs} * ${getX(rhs)}`;
+        case 'x*y':
+          return `${getX(lhs)} * ${getX(rhs)}`;
         case '/':
           return `cplx_div(${lhs}, ${rhs})`;
         case '^':
           return `cplx_pow(${lhs}, ${rhs})`;
         case '^x':
-          return `cplx_pow_scalar(${lhs}, ${rhs}.x)`;
+          return `cplx_pow_scalar(${lhs}, ${getX(rhs)})`;
       }
-    case 'func':
+    }
+    case 'func': {
       const arg = glslOf(expr.arg);
 
       switch (expr.value) {
@@ -333,9 +373,11 @@ const glslOf = (expr: OptExpr): string => {
         case 'exp':
           return `cplx_exp(${arg})`;
       }
-    case 'real':
+    }
+    case 'real': {
       const x = Number(expr.x);
       return Number.isInteger(x) ? `${x}.0` : `${x}`;
+    }
     case 'complex':
       return `vec2(${glslOf(expr.a)}, ${glslOf(expr.b)})`;
   }
@@ -344,6 +386,8 @@ const glslOf = (expr: OptExpr): string => {
 const buildFunction = (expr: OptExpr) => (z: Complex) => evaluate(expr, z);
 
 export const funcOf = (expr: string): C1Func => {
+  console.log(glslOf(parse('3 * z^2')));
+
   const parsed = parse(expr);
   return {
     f: glslOf(parsed),
