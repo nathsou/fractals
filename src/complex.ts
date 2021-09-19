@@ -88,4 +88,5 @@ export const Complex = {
 
     return sub(add(sub(add(sub(add(sub(z, t2), t3), t4), t5), t6), t7), t8);
   },
+  exp: ([a, b]: Complex) => Complex.times([Math.cos(b), Math.sin(b)], Math.exp(a)),
 };

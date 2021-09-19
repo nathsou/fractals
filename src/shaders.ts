@@ -102,6 +102,10 @@ export const shaders = (params: Params) => ({
       return z - t2 + t3 - t4 + t5 - t6 + t7 - t8;
     }
 
+    vec2 cplx_exp(vec2 z) {
+      return exp(z.x) * vec2(cos(z.y), sin(z.y));
+    }
+
     vec3 newton_method(vec2 z0, float eps) {
       vec2 z = vec2(z0);
       float n = 0.0;
@@ -111,7 +115,7 @@ export const shaders = (params: Params) => ({
         z -= delta;
         n++;
 
-        if (length(delta) < eps) {
+        if (length(delta) <= eps) {
           break;
         }
       }

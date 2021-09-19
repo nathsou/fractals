@@ -12,9 +12,10 @@ export const functions = [
   'z^3 - 2 * z + 3',
   'z^4 - 1',
   'z^z - 2',
-  'z^z^z - 2',
   'log(z)',
   'z^log(z + i) - 1',
+  'sin(z) * cos(z)',
+  'exp(z) - z^5',
 ];
 
 type Expr = OperatorExpr | VariableOrLiteralExpr | FunctionExpr;
@@ -31,7 +32,7 @@ type VariableOrLiteralExpr = {
   value: string,
 };
 
-type BuiltInFunction = 'log' | 'sin' | 'cos' | 'sqrt';
+type BuiltInFunction = 'log' | 'sin' | 'cos' | 'sqrt' | 'exp';
 
 type FunctionExpr = {
   type: 'FUNCTION',
@@ -92,6 +93,12 @@ const optimize = (expr: Expr): OptExpr => {
             type: 'complex',
             a: { type: 'real', x: 0 },
             b: { type: 'real', x: 1 }
+          };
+        case 'e':
+          return {
+            type: 'complex',
+            a: { type: 'real', x: Math.E },
+            b: { type: 'real', x: 0 }
           };
         default:
           return {
@@ -185,6 +192,21 @@ const optimize = (expr: Expr): OptExpr => {
         case '^': {
           const lhs = optimize(expr.left);
           const rhs = optimize(expr.right);
+
+          if (
+            lhs.type === 'complex' &&
+            lhs.a.type === 'real' &&
+            lhs.a.x === Math.E &&
+            lhs.b.type === 'real' &&
+            lhs.b.x === 0
+          ) {
+            return {
+              type: 'func',
+              value: 'exp',
+              arg: rhs,
+            };
+          }
+
           const isRhsReal =
             rhs.type === 'complex'
             && rhs.b.type === 'real'
@@ -256,6 +278,8 @@ const evaluate = (expr: OptExpr, z: Complex): Complex => {
           return Complex.cos(arg);
         case 'sqrt':
           return Complex.powScalar(arg, 0.5);
+        case 'exp':
+          return Complex.exp(arg);
       }
     case 'complex':
       const [a] = evaluate(expr.a, z);
@@ -306,6 +330,8 @@ const glslOf = (expr: OptExpr): string => {
           return `cplx_cos(${arg})`;
         case 'sqrt':
           return `cplx_pow_scalar(${arg}, 0.5)`;
+        case 'exp':
+          return `cplx_exp(${arg})`;
       }
     case 'real':
       const x = Number(expr.x);
