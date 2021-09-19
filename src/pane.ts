@@ -44,7 +44,7 @@ export const createPane = () => {
       f = funcOf(ps['f(z)'] === 'custom' ? ps['custom function'] : ps['f(z)']);
       errorMessage.hidden = true;
     } catch (err) {
-      params.error = (err as any)?.message ?? '';
+      params.error = (err as any)?.message ?? 'invalid expression';
       errorMessage.hidden = false;
     }
 
