@@ -1,4 +1,50 @@
-import { Params } from "./params";
+import { Method, Params } from "./params";
+
+type MethodImpl = (funcName: string, params: Params) => string;
+
+const methodsMap: Record<Method, MethodImpl> = {
+  newton: (name, params) => `
+    vec3 ${name}(vec2 z0, float eps) {
+      vec2 z = vec2(z0);
+      float n = 0.0;
+
+      for (int j = 0; j < MAX_ITERS; j++) {
+        vec2 delta = cplx_div(${params.function.f}, ${params.function.diff()});
+        z -= delta;
+        n++;
+
+        if (length(delta) <= eps) {
+          break;
+        }
+      }
+
+      return vec3(z, n);
+    }
+  `,
+  halley: (name, params) => `
+    vec3 ${name}(vec2 z0, float eps) {
+      vec2 z = vec2(z0);
+      float n = 0.0;
+
+      for (int j = 0; j < MAX_ITERS; j++) {
+        vec2 f_z = ${params.function.f};
+        vec2 f_prime_z = ${params.function.diff(1)};
+        vec2 f_prime_prime_z = ${params.function.diff(2)};
+        vec2 top = 2.0 * cplx_mult(f_z, f_prime_z);
+        vec2 bot = 2.0 * cplx_mult(f_prime_z, f_prime_z) - cplx_mult(f_z, f_prime_prime_z);
+        vec2 delta = cplx_div(top, bot);
+        z -= delta;
+        n++;
+
+        if (length(delta) <= eps) {
+          break;
+        }
+      }
+
+      return vec3(z, n);
+    }
+  `
+};
 
 export const shaders = (params: Params) => ({
   vertex: `        
@@ -106,22 +152,7 @@ export const shaders = (params: Params) => ({
       return exp(z.x) * vec2(cos(z.y), sin(z.y));
     }
 
-    vec3 newton_method(vec2 z0, float eps) {
-      vec2 z = vec2(z0);
-      float n = 0.0;
-
-      for (int j = 0; j < MAX_ITERS; j++) {
-        vec2 delta = cplx_div(${params.function.f}, ${params.function.df});
-        z -= delta;
-        n++;
-
-        if (length(delta) <= eps) {
-          break;
-        }
-      }
-
-      return vec3(z, n);
-    }
+    ${methodsMap[params.method]('findRoot', params)}
 
     vec3 hsv2rgb(vec3 c) {
       vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
@@ -139,7 +170,7 @@ export const shaders = (params: Params) => ({
 
     void main() {
       vec3 color = vec3(0.0);
-      vec3 r = newton_method(v_pos, ETA);
+      vec3 r = findRoot(v_pos, ETA);
 
       if (r.z > 0.0) {
         float m = r.z / float(MAX_ITERS);

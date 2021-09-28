@@ -1,14 +1,15 @@
 import { Complex } from "./complex";
 import nerdamer from 'nerdamer';
 
-export type C1Func = {
+export type Func = {
   f: string,
   native: (z: Complex) => Complex,
-  df: string,
+  diff: (n?: number) => string,
 };
 
 export const functions = [
   'z^3 - 1',
+  '(z - 1)^2 - 1',
   'z^3 - 2 * z + 3',
   'z^4 - 1',
   'z^z - 2',
@@ -421,11 +422,11 @@ const glslOf = (expr: OptExpr): string => {
 
 const buildFunction = (expr: OptExpr) => (z: Complex) => evaluate(expr, z);
 
-export const funcOf = (expr: string): C1Func => {
+export const funcOf = (expr: string): Func => {
   const parsed = parse(expr);
   return {
     f: glslOf(parsed),
     native: buildFunction(parsed),
-    df: glslOf(parse(`${nerdamer.diff(expr, 'z')}`)),
+    diff: n => glslOf(parse(`${nerdamer.diff(expr, 'z', n)}`)),
   };
 };

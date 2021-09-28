@@ -1,7 +1,11 @@
-import { C1Func } from "./functions";
+import { Func } from "./functions";
+
+export const methods = ['newton', 'halley'] as const;
+export type Method = (typeof methods)[number];
 
 export interface Params {
-  function: C1Func,
+  function: Func,
+  method: Method,
   colorShift: number,
   brightnessFactor: number,
   maxIterations: number,

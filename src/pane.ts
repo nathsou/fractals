@@ -1,11 +1,12 @@
 import { Pane } from "tweakpane";
 import { funcOf, functions } from "./functions";
-import { Params } from "./params";
+import { Method, methods, Params } from "./params";
 
 export const createPane = () => {
   const params = {
     'f(z)': functions[0],
     'custom function': 'z^2 - 1',
+    'method': 'newton',
     'color shift': 1.6,
     'max iterations': 50,
     'convergence threshold': 0.001,
@@ -50,12 +51,20 @@ export const createPane = () => {
 
     return {
       function: f,
+      method: ps.method as Method,
       colorShift: ps['color shift'],
       maxIterations: ps['max iterations'],
       convergencePrecision: ps['convergence threshold'],
       brightnessFactor: -ps['brightness factor']
     };
   };
+
+  pane.addInput(params, 'method', {
+    options: methods.reduce<Record<string, string>>((obj, f) => {
+      obj[f] = f;
+      return obj;
+    }, {}),
+  });
 
   pane.addInput(
     params,

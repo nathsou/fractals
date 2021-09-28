@@ -3,6 +3,7 @@ import { newtonSteps } from "./newton";
 import { createPane } from './pane';
 import { Params } from "./params";
 import { createRenderer } from "./renderer";
+import { createPinchZoomHandler } from "./zoompan";
 
 // x : [a, b] -> [A, B] 
 const map = (x: number, a: number, b: number, A: number, B: number) => (x - a) * (B - A) / (b - a) + A;
@@ -39,68 +40,6 @@ const drawPath = (
       ctx.stroke();
     }
   }
-};
-
-type PinchListener = (centerX: number, centerY: number, newScale: number) => void;
-
-const createPinchZoomHandler = () => {
-  const pointers = new Map<number, PointerEvent>();
-  let lastDist = 0;
-  let lastScale = 1;
-
-  const removeEvent = (ev: PointerEvent) => {
-    pointers.delete(ev.pointerId);
-  };
-
-  const onPointerDown = (ev: PointerEvent) => {
-    pointers.set(ev.pointerId, ev);
-  };
-
-  const onPointerUp = (ev: PointerEvent) => {
-    lastDist = 0;
-    removeEvent(ev);
-  };
-
-  const pinchListeners: PinchListener[] = [];
-
-  const addPinchListener = (listener: PinchListener): void => {
-    pinchListeners.push(listener);
-  };
-
-  const onPointerMove = (ev: PointerEvent) => {
-    pointers.set(ev.pointerId, ev);
-
-    if (pointers.size === 2) {
-      const [e1, e2] = [...pointers.values()];
-
-      const dist = Math.sqrt((e2.clientX - e1.clientX) ** 2 + (e2.clientY - e1.clientY) ** 2);
-
-      if (lastDist === 0) {
-        lastDist = dist;
-      }
-
-
-      const scale = lastScale * (dist / lastDist);
-
-      const centerX = (e2.clientX + e1.clientX) / 2;
-      const centerY = (e2.clientY + e1.clientY) / 2;
-
-      for (const listener of pinchListeners) {
-        listener(centerX, centerY, scale);
-      }
-
-      lastDist = dist;
-      lastScale = scale;
-    }
-  };
-
-  return {
-    addPinchListener,
-    onPointerDown,
-    onPointerUp,
-    onPointerMove,
-    isZooming: () => pointers.size === 2,
-  };
 };
 
 const createApp = (width: number, height: number, params: Params, originalScale = 1) => {
@@ -143,6 +82,7 @@ const createApp = (width: number, height: number, params: Params, originalScale 
   };
 
   const cplxToPos = ([a, b]: Complex): Complex => {
+    console.log('offset: ', options.offset);
     const { d1, d2, d3, d4 } = ranges();
     return [
       map(a, d1, d2, 0, cnv.width),
@@ -160,6 +100,7 @@ const createApp = (width: number, height: number, params: Params, originalScale 
   const onPointerDown = (ev: PointerEvent): void => {
     ev.preventDefault();
     isPanning = true;
+    console.log([ev.clientX, ev.clientY], posToCplx([ev.clientX, ev.clientY]));
     z0.value = posToCplx([ev.clientX, ev.clientY]);
     z0.clickTimestamp = Date.now();
     overlay.style.cursor = 'grab';
