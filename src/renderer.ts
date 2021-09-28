@@ -19,6 +19,8 @@ export const createRenderer = (cnv: HTMLCanvasElement, params: Params) => {
 
     const { vertex, fragment } = shaders(params);
 
+    // console.log(fragment);
+
     gl.shaderSource(vertShader, vertex);
     gl.compileShader(vertShader);
 

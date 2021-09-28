@@ -2,9 +2,9 @@ import { Complex } from "./complex";
 import nerdamer from 'nerdamer';
 
 export type Func = {
-  f: string,
+  f: (z: string) => string,
   native: (z: Complex) => Complex,
-  diff: (n?: number) => string,
+  diff: (n?: number) => (z: string) => string,
 };
 
 export const functions = [
@@ -422,11 +422,15 @@ const glslOf = (expr: OptExpr): string => {
 
 const buildFunction = (expr: OptExpr) => (z: Complex) => evaluate(expr, z);
 
+const subst = (what: string, by: string, str: string) => str.replaceAll(what, `(${by})`);
+
 export const funcOf = (expr: string): Func => {
   const parsed = parse(expr);
   return {
-    f: glslOf(parsed),
+    f: (z: string) => subst('z', z, glslOf(parsed)),
     native: buildFunction(parsed),
-    diff: n => glslOf(parse(`${nerdamer.diff(expr, 'z', n)}`)),
+    diff: n => (z: string) => subst('z', z, glslOf(
+      parse(`${nerdamer.diff(expr, 'z', n)}`)
+    ))
   };
 };

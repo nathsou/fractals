@@ -5,11 +5,11 @@ type MethodImpl = (funcName: string, params: Params) => string;
 const methodsMap: Record<Method, MethodImpl> = {
   newton: (name, params) => `
     vec3 ${name}(vec2 z0, float eps) {
-      vec2 z = vec2(z0);
+      vec2 z = z0;
       float n = 0.0;
 
       for (int j = 0; j < MAX_ITERS; j++) {
-        vec2 delta = cplx_div(${params.function.f}, ${params.function.diff()});
+        vec2 delta = cplx_div(${params.function.f('z')}, ${params.function.diff(1)('z')});
         z -= delta;
         n++;
 
@@ -23,16 +23,60 @@ const methodsMap: Record<Method, MethodImpl> = {
   `,
   halley: (name, params) => `
     vec3 ${name}(vec2 z0, float eps) {
-      vec2 z = vec2(z0);
+      vec2 z = z0;
       float n = 0.0;
 
       for (int j = 0; j < MAX_ITERS; j++) {
-        vec2 f_z = ${params.function.f};
-        vec2 f_prime_z = ${params.function.diff(1)};
-        vec2 f_prime_prime_z = ${params.function.diff(2)};
+        vec2 f_z = ${params.function.f('z')};
+        vec2 f_prime_z = ${params.function.diff(1)('z')};
+        vec2 f_prime_prime_z = ${params.function.diff(2)('z')};
         vec2 top = 2.0 * cplx_mult(f_z, f_prime_z);
         vec2 bot = 2.0 * cplx_mult(f_prime_z, f_prime_z) - cplx_mult(f_z, f_prime_prime_z);
         vec2 delta = cplx_div(top, bot);
+        z -= delta;
+        n++;
+
+        if (length(delta) <= eps) {
+          break;
+        }
+      }
+
+      return vec3(z, n);
+    }
+  `,
+  secant: (name, params) => `
+    vec3 ${name}(vec2 z0, float eps) {
+      // run one newton method step to get a second approximation needed for the secant method
+      vec2 z1 = z0 - cplx_div(${params.function.f('z0')}, ${params.function.diff(1)('z0')});
+      vec2 z_n_minus_2 = z0;
+      vec2 z_n_minus_1 = z1;
+      float n = 0.0;
+
+      for (int j = 0; j < MAX_ITERS; j++) {
+        vec2 top = z_n_minus_1 - z_n_minus_2;
+        vec2 f_z_n_minus_1 = ${params.function.f('z_n_minus_1')};
+        vec2 bot = f_z_n_minus_1 - ${params.function.f('z_n_minus_2')};
+        vec2 delta = cplx_mult(f_z_n_minus_1, cplx_div(top, bot));
+        z_n_minus_2 = z_n_minus_1;
+        z_n_minus_1 -= delta;
+        n++;
+
+        if (length(delta) <= eps) {
+          break;
+        }
+      }
+
+      return vec3(z_n_minus_1, n);
+    }`,
+  steffensen: (name, params) => `
+    vec3 ${name}(vec2 z0, float eps) {
+      vec2 z = z0;
+      float n = 0.0;
+
+      for (int j = 0; j < MAX_ITERS; j++) {
+        vec2 f_z = ${params.function.f('z')};
+        vec2 g_z = cplx_div(${params.function.f('z + f_z')}, f_z) - vec2(1.0, 0.0);
+        vec2 delta = cplx_div(f_z, g_z);
         z -= delta;
         n++;
 
@@ -152,7 +196,7 @@ export const shaders = (params: Params) => ({
       return exp(z.x) * vec2(cos(z.y), sin(z.y));
     }
 
-    ${methodsMap[params.method]('findRoot', params)}
+    ${methodsMap[params.method]('find_root', params)}
 
     vec3 hsv2rgb(vec3 c) {
       vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
@@ -170,7 +214,7 @@ export const shaders = (params: Params) => ({
 
     void main() {
       vec3 color = vec3(0.0);
-      vec3 r = findRoot(v_pos, ETA);
+      vec3 r = find_root(v_pos, ETA);
 
       if (r.z > 0.0) {
         float m = r.z / float(MAX_ITERS);

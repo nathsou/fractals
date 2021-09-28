@@ -1,7 +1,7 @@
 import { Complex } from "./complex";
 import { newtonSteps } from "./newton";
 import { createPane } from './pane';
-import { Params } from "./params";
+import { Method, Params } from "./params";
 import { createRenderer } from "./renderer";
 import { createPinchZoomHandler } from "./zoompan";
 
@@ -13,6 +13,7 @@ const drawPath = (
   cplxToPos: (z: Complex) => Complex,
   f: (z: Complex) => Complex,
   z0: Complex,
+  method: Method,
   clear = false,
   df?: (z: Complex) => Complex,
 ): void => {
@@ -21,7 +22,7 @@ const drawPath = (
   if (ctx !== null) {
     ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-    if (Complex.isNaN(z0)) {
+    if (Complex.isNaN(z0) || method !== 'newton') {
       return;
     }
 
@@ -100,7 +101,7 @@ const createApp = (width: number, height: number, params: Params, originalScale 
   const onPointerDown = (ev: PointerEvent): void => {
     ev.preventDefault();
     isPanning = true;
-    console.log([ev.clientX, ev.clientY], posToCplx([ev.clientX, ev.clientY]));
+    // console.log([ev.clientX, ev.clientY], posToCplx([ev.clientX, ev.clientY]));
     z0.value = posToCplx([ev.clientX, ev.clientY]);
     z0.clickTimestamp = Date.now();
     overlay.style.cursor = 'grab';
@@ -116,7 +117,7 @@ const createApp = (width: number, height: number, params: Params, originalScale 
   const onPointerUp = (ev: PointerEvent): void => {
     ev.preventDefault();
     if (Date.now() - z0.clickTimestamp < 100) {
-      drawPath(overlay, cplxToPos, params.function.native, z0.value);
+      drawPath(overlay, cplxToPos, params.function.native, z0.value, params.method);
     }
 
     onPointerCancel();
@@ -145,7 +146,7 @@ const createApp = (width: number, height: number, params: Params, originalScale 
     if (now - lastUpdateTime >= minInterval) {
       lastUpdateTime = now;
       renderer.render(options.scale, options.offset);
-      drawPath(overlay, cplxToPos, params.function.native, z0.value, true);
+      drawPath(overlay, cplxToPos, params.function.native, z0.value, params.method, true);
     }
   };
 

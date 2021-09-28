@@ -1,6 +1,6 @@
 import { Func } from "./functions";
 
-export const methods = ['newton', 'halley'] as const;
+export const methods = ['newton', 'halley', 'secant', 'steffensen'] as const;
 export type Method = (typeof methods)[number];
 
 export interface Params {
