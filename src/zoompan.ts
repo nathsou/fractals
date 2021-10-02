@@ -5,12 +5,20 @@ export const createPinchZoomHandler = () => {
   const pointers = new Map<number, PointerEvent>();
   let lastDist = 0;
   let lastScale = 1;
+  let lastX = 0;
+  let lastY = 0;
 
   const removeEvent = (ev: PointerEvent) => {
     pointers.delete(ev.pointerId);
   };
 
+  const updatePosition = (ev: PointerEvent): void => {
+    lastX = ev.clientX;
+    lastY = ev.clientY;
+  };
+
   const onPointerDown = (ev: PointerEvent) => {
+    updatePosition(ev);
     pointers.set(ev.pointerId, ev);
   };
 
@@ -27,6 +35,7 @@ export const createPinchZoomHandler = () => {
 
   const onPointerMove = (ev: PointerEvent) => {
     pointers.set(ev.pointerId, ev);
+    updatePosition(ev);
 
     if (pointers.size === 2) {
       const [e1, e2] = [...pointers.values()];
@@ -52,11 +61,18 @@ export const createPinchZoomHandler = () => {
     }
   };
 
+  const movement = (ev: PointerEvent): [number, number] => {
+    const mvt: [number, number] = [ev.clientX - lastX, ev.clientY - lastY];
+    updatePosition(ev);
+    return mvt;
+  };
+
   return {
     addPinchListener,
     onPointerDown,
     onPointerUp,
     onPointerMove,
     isZooming: () => pointers.size === 2,
+    movement,
   };
 };

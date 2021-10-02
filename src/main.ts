@@ -108,7 +108,8 @@ const createApp = (width: number, height: number, params: Params, originalScale 
     pinch.onPointerDown(ev);
   };
 
-  const onPointerCancel = (): void => {
+  const onPointerCancel = (ev?: PointerEvent): void => {
+    ev?.preventDefault();
     isPanning = false;
     z0.value = Complex.NaN();
     overlay.style.cursor = 'auto';
@@ -152,13 +153,14 @@ const createApp = (width: number, height: number, params: Params, originalScale 
 
   const onPointerMove = (ev: PointerEvent) => {
     ev.preventDefault();
+    const [movementX, movementY] = pinch.movement(ev);
 
     if (pinch.isZooming()) {
       pinch.onPointerMove(ev);
     } else if (isPanning) {
-      const k = ev.pointerType === 'touch' ? 0.5 : 1;
-      const x = options.offset.x - k * ev.movementX / (width * options.scale * 0.5);
-      const y = options.offset.y + k * ev.movementY / (height * options.scale * 0.5);
+      const k = 1;
+      const x = options.offset.x - k * movementX / (width * options.scale * 0.5);
+      const y = options.offset.y + k * movementY / (height * options.scale * 0.5);
       setOffset(x, y);
       update();
     }
