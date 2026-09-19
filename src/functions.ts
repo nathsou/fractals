@@ -2,9 +2,11 @@ import { Complex } from "./complex";
 import nerdamer from 'nerdamer';
 
 export type Func = {
+  source: string,
   f: (z: string) => string,
   native: (z: Complex) => Complex,
   diff: (n?: number) => (z: string) => string,
+  nativeDiff: (n?: number) => (z: Complex) => Complex,
 };
 
 export const functions = [
@@ -342,7 +344,7 @@ const evaluate = (expr: OptExpr, z: Complex): Complex => {
       }
     case 'complex':
       const [a] = evaluate(expr.a, z);
-      const [, b] = evaluate(expr.b, z);
+      const [b] = evaluate(expr.b, z);
 
       return [a, b];
   }
@@ -375,15 +377,15 @@ const glslOf = (expr: OptExpr): string => {
 
       switch (expr.op) {
         case '+':
-          return `${lhs} + ${rhs}`;
+          return `(${lhs} + ${rhs})`;
         case '-':
-          return `${lhs} - ${rhs}`;
+          return `(${lhs} - ${rhs})`;
         case '*':
           return `cplx_mult(${lhs}, ${rhs})`;
         case '*x':
-          return `${lhs} * ${getX(rhs)}`;
+          return `(${lhs} * ${getX(rhs)})`;
         case 'x*y':
-          return `${getX(lhs)} * ${getX(rhs)}`;
+          return `vec2(${getX(lhs)} * ${getX(rhs)}, 0.0)`;
         case '/':
           return `cplx_div(${lhs}, ${rhs})`;
         case '^':
@@ -426,11 +428,23 @@ const subst = (what: string, by: string, str: string) => str.replaceAll(what, `(
 
 export const funcOf = (expr: string): Func => {
   const parsed = parse(expr);
+  const derivatives = new Map<number, OptExpr>();
+  const derivative = (n = 1): OptExpr => {
+    const cached = derivatives.get(n);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const parsedDerivative = parse(`${nerdamer.diff(expr, 'z', n)}`);
+    derivatives.set(n, parsedDerivative);
+    return parsedDerivative;
+  };
+
   return {
+    source: expr,
     f: (z: string) => subst('z', z, glslOf(parsed)),
     native: buildFunction(parsed),
-    diff: n => (z: string) => subst('z', z, glslOf(
-      parse(`${nerdamer.diff(expr, 'z', n)}`)
-    ))
+    diff: n => (z: string) => subst('z', z, glslOf(derivative(n))),
+    nativeDiff: n => buildFunction(derivative(n)),
   };
 };
