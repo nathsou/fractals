@@ -14,7 +14,6 @@ const drawPath = (
   f: (z: Complex) => Complex,
   z0: Complex,
   method: Method,
-  clear = false,
   df?: (z: Complex) => Complex,
 ): void => {
   const ctx = overlay.getContext('2d');
@@ -26,20 +25,18 @@ const drawPath = (
       return;
     }
 
-    if (!clear) {
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'white';
 
-      ctx.beginPath();
-      const [x0, y0] = cplxToPos(z0);
-      ctx.moveTo(x0, y0);
+    ctx.beginPath();
+    const [x0, y0] = cplxToPos(z0);
+    ctx.moveTo(x0, y0);
 
-      for (const [x, y] of newtonSteps(f, z0, df).map(cplxToPos)) {
-        ctx.lineTo(x, y);
-      }
-
-      ctx.stroke();
+    for (const [x, y] of newtonSteps(f, z0, df).map(cplxToPos)) {
+      ctx.lineTo(x, y);
     }
+
+    ctx.stroke();
   }
 };
 
@@ -93,10 +90,11 @@ const createApp = (width: number, height: number, params: Params, originalScale 
     ];
   };
 
-  const z0 = {
+  const pointerDown = {
     value: Complex.NaN(),
     clickTimestamp: 0
   };
+  let selectedZ = Complex.NaN();
 
   const pinch = createPinchZoomHandler();
 
@@ -104,8 +102,8 @@ const createApp = (width: number, height: number, params: Params, originalScale 
     ev.preventDefault();
     isPanning = true;
     // console.log([ev.clientX, ev.clientY], posToCplx([ev.clientX, ev.clientY]));
-    z0.value = posToCplx([ev.clientX, ev.clientY]);
-    z0.clickTimestamp = Date.now();
+    pointerDown.value = posToCplx([ev.clientX, ev.clientY]);
+    pointerDown.clickTimestamp = Date.now();
     overlay.style.cursor = 'grab';
     pinch.onPointerDown(ev);
   };
@@ -113,14 +111,15 @@ const createApp = (width: number, height: number, params: Params, originalScale 
   const onPointerCancel = (ev?: PointerEvent): void => {
     ev?.preventDefault();
     isPanning = false;
-    z0.value = Complex.NaN();
+    pointerDown.value = Complex.NaN();
     overlay.style.cursor = 'auto';
   };
 
   const onPointerUp = (ev: PointerEvent): void => {
     ev.preventDefault();
-    if (Date.now() - z0.clickTimestamp < 100) {
-      drawPath(overlay, cplxToPos, params.function.native, z0.value, params.method);
+    if (Date.now() - pointerDown.clickTimestamp < 100) {
+      selectedZ = pointerDown.value;
+      drawPath(overlay, cplxToPos, params.function.native, selectedZ, params.method);
     }
 
     onPointerCancel();
@@ -149,7 +148,7 @@ const createApp = (width: number, height: number, params: Params, originalScale 
     if (now - lastUpdateTime >= minInterval) {
       lastUpdateTime = now;
       renderer.render(options.scale, options.offset);
-      drawPath(overlay, cplxToPos, params.function.native, z0.value, params.method, true);
+      drawPath(overlay, cplxToPos, params.function.native, selectedZ, params.method);
     }
   };
 
