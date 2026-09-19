@@ -68,8 +68,11 @@ const createApp = (width: number, height: number, params: Params, originalScale 
 
   const ranges = () => {
     const zoom = 1 / options.scale;
-    const x_len = zoom * cnv.width / cnv.height;
-    const [d1, d2] = [-x_len + options.offset.x, x_len + options.offset.x];
+    const aspectRatio = cnv.width / cnv.height;
+    const [d1, d2] = [
+      aspectRatio * (-zoom + options.offset.x),
+      aspectRatio * (zoom + options.offset.x)
+    ];
     const [d3, d4] = [zoom + options.offset.y, -zoom + options.offset.y];
     return { d1, d2, d3, d4 };
   };
@@ -83,7 +86,6 @@ const createApp = (width: number, height: number, params: Params, originalScale 
   };
 
   const cplxToPos = ([a, b]: Complex): Complex => {
-    console.log('offset: ', options.offset);
     const { d1, d2, d3, d4 } = ranges();
     return [
       map(a, d1, d2, 0, cnv.width),
