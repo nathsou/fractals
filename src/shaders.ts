@@ -1,4 +1,5 @@
 import { Method, Params } from "./params";
+import { MAX_RENDER_ITERATIONS } from './render-settings';
 
 type MethodImpl = (funcName: string, params: Params) => string;
 
@@ -9,16 +10,17 @@ const methodsMap: Record<Method, MethodImpl> = {
       float n = 0.0;
 
       for (int j = 0; j < MAX_ITERS; j++) {
+        if (j >= u_max_iters) break;
         vec2 delta = cplx_div(${params.function.f('z')}, ${params.function.diff(1)('z')});
         z -= delta;
         n++;
 
         if (length(delta) <= eps) {
-          break;
+          return vec3(z, n);
         }
       }
 
-      return vec3(z, n);
+      return vec3(z, -n);
     }
   `,
   halley: (name, params) => `
@@ -27,6 +29,7 @@ const methodsMap: Record<Method, MethodImpl> = {
       float n = 0.0;
 
       for (int j = 0; j < MAX_ITERS; j++) {
+        if (j >= u_max_iters) break;
         vec2 f_z = ${params.function.f('z')};
         vec2 f_prime_z = ${params.function.diff(1)('z')};
         vec2 f_prime_prime_z = ${params.function.diff(2)('z')};
@@ -37,11 +40,11 @@ const methodsMap: Record<Method, MethodImpl> = {
         n++;
 
         if (length(delta) <= eps) {
-          break;
+          return vec3(z, n);
         }
       }
 
-      return vec3(z, n);
+      return vec3(z, -n);
     }
   `,
   secant: (name, params) => `
@@ -53,6 +56,7 @@ const methodsMap: Record<Method, MethodImpl> = {
       float n = 0.0;
 
       for (int j = 0; j < MAX_ITERS; j++) {
+        if (j >= u_max_iters) break;
         vec2 top = z_n_minus_1 - z_n_minus_2;
         vec2 f_z_n_minus_1 = ${params.function.f('z_n_minus_1')};
         vec2 bot = f_z_n_minus_1 - ${params.function.f('z_n_minus_2')};
@@ -62,11 +66,11 @@ const methodsMap: Record<Method, MethodImpl> = {
         n++;
 
         if (length(delta) <= eps) {
-          break;
+          return vec3(z_n_minus_1, n);
         }
       }
 
-      return vec3(z_n_minus_1, n);
+      return vec3(z_n_minus_1, -n);
     }`,
   steffensen: (name, params) => `
     vec3 ${name}(vec2 z0, float eps) {
@@ -74,6 +78,7 @@ const methodsMap: Record<Method, MethodImpl> = {
       float n = 0.0;
 
       for (int j = 0; j < MAX_ITERS; j++) {
+        if (j >= u_max_iters) break;
         vec2 f_z = ${params.function.f('z')};
         vec2 g_z = cplx_div(${params.function.f('z + f_z')}, f_z) - vec2(1.0, 0.0);
         vec2 delta = cplx_div(f_z, g_z);
@@ -81,11 +86,11 @@ const methodsMap: Record<Method, MethodImpl> = {
         n++;
 
         if (length(delta) <= eps) {
-          break;
+          return vec3(z, n);
         }
       }
 
-      return vec3(z, n);
+      return vec3(z, -n);
     }
   `
 };
@@ -109,10 +114,11 @@ export const shaders = (params: Params) => ({
   fragment: `
     precision highp float;
 
-    #define MAX_ITERS ${params.maxIterations}
-    #define ETA ${params.convergencePrecision}
+    #define MAX_ITERS ${MAX_RENDER_ITERATIONS}
 
     varying vec2 v_pos;
+    uniform int u_max_iters;
+    uniform float u_epsilon;
 
     vec2 cplx_mult(vec2 a, vec2 b) {
       return vec2(a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y);
@@ -206,7 +212,8 @@ export const shaders = (params: Params) => ({
 
     vec3 root_color(vec2 z, float n) {
       float p = float(${params.brightnessFactor}); // color brightness factor
-      float m = 1.0 - (exp(p * n / float(MAX_ITERS)) - 1.0) / (exp(p) - 1.0);
+      float progress = n / float(u_max_iters);
+      float m = 0.2 + 0.8 * exp(p * progress);
       float hue = cplx_arg(z) / 6.2831853 + float(${params.colorShift});
 
       return hsv2rgb(vec3(hue, 1.0, m));
@@ -214,11 +221,10 @@ export const shaders = (params: Params) => ({
 
     void main() {
       vec3 color = vec3(0.0);
-      vec3 r = find_root(v_pos, ETA);
+      vec3 r = find_root(v_pos, u_epsilon);
 
       if (r.z > 0.0) {
-        float m = r.z / float(MAX_ITERS);
-        color = mix(root_color(vec2(r.x, r.y), r.z), vec3(0.0), m);
+        color = root_color(vec2(r.x, r.y), r.z);
       }
   
       gl_FragColor = vec4(color, 1.0);
