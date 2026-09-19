@@ -25,7 +25,8 @@ const drawPath = (
       return;
     }
 
-    ctx.lineWidth = 2;
+    const deviceScale = overlay.clientWidth > 0 ? overlay.width / overlay.clientWidth : 1;
+    ctx.lineWidth = 2 * deviceScale;
     ctx.strokeStyle = 'white';
 
     ctx.beginPath();
@@ -43,10 +44,16 @@ const drawPath = (
 const createApp = (width: number, height: number, params: Params, originalScale = 1) => {
   const cnv = document.querySelector('#cnv') as HTMLCanvasElement;
   const overlay = document.querySelector('#overlay') as HTMLCanvasElement;
-  cnv.width = width;
-  cnv.height = height;
-  overlay.width = width;
-  overlay.height = height;
+  const resizeBackingStores = () => {
+    const deviceScale = window.devicePixelRatio || 1;
+    const pixelWidth = Math.round(width * deviceScale);
+    const pixelHeight = Math.round(height * deviceScale);
+    cnv.width = pixelWidth;
+    cnv.height = pixelHeight;
+    overlay.width = pixelWidth;
+    overlay.height = pixelHeight;
+  };
+  resizeBackingStores();
 
   let isPanning = false;
 
@@ -82,6 +89,14 @@ const createApp = (width: number, height: number, params: Params, originalScale 
     ];
   };
 
+  const eventToCanvasPosition = (ev: PointerEvent): Complex => {
+    const bounds = overlay.getBoundingClientRect();
+    return [
+      (ev.clientX - bounds.left) * overlay.width / bounds.width,
+      (ev.clientY - bounds.top) * overlay.height / bounds.height,
+    ];
+  };
+
   const cplxToPos = ([a, b]: Complex): Complex => {
     const { d1, d2, d3, d4 } = ranges();
     return [
@@ -101,8 +116,7 @@ const createApp = (width: number, height: number, params: Params, originalScale 
   const onPointerDown = (ev: PointerEvent): void => {
     ev.preventDefault();
     isPanning = true;
-    // console.log([ev.clientX, ev.clientY], posToCplx([ev.clientX, ev.clientY]));
-    pointerDown.value = posToCplx([ev.clientX, ev.clientY]);
+    pointerDown.value = posToCplx(eventToCanvasPosition(ev));
     pointerDown.clickTimestamp = Date.now();
     overlay.style.cursor = 'grab';
     pinch.onPointerDown(ev);
@@ -188,16 +202,14 @@ const createApp = (width: number, height: number, params: Params, originalScale 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     const newScale = options.scale * (e.deltaY < 0 ? 1.1 : 0.9);
-    zoomInOut(e.clientX, e.clientY, newScale);
+    const bounds = overlay.getBoundingClientRect();
+    zoomInOut(e.clientX - bounds.left, e.clientY - bounds.top, newScale);
   };
 
   const onResize = (): void => {
     width = cnv.clientWidth;
     height = cnv.clientHeight;
-    cnv.width = width;
-    cnv.height = height;
-    overlay.width = width;
-    overlay.height = height;
+    resizeBackingStores();
     update();
   };
 
@@ -207,7 +219,10 @@ const createApp = (width: number, height: number, params: Params, originalScale 
   overlay.addEventListener('wheel', onWheel);
   overlay.addEventListener('pointermove', onPointerMove);
   window.addEventListener('resize', onResize);
-  pinch.addPinchListener(zoomInOut);
+  pinch.addPinchListener((centerX, centerY, newScale) => {
+    const bounds = overlay.getBoundingClientRect();
+    zoomInOut(centerX - bounds.left, centerY - bounds.top, newScale);
+  });
 
   update();
 
