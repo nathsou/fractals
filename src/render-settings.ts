@@ -1,25 +1,15 @@
+import Decimal from 'decimal.js';
+import type { View } from './precision';
+
 export const MAX_RENDER_ITERATIONS = 400;
+export function iterationLimit(base: number, zoom: string): number {
+  return Math.min(4096, Math.ceil(base + 40 * Math.max(0, new Decimal(zoom).e)));
+}
 
-export const iterationLimit = (base: number, zoom: number): number => {
-  const zoomBonus = 12 * Math.max(0, Math.log2(zoom));
-  return Math.min(MAX_RENDER_ITERATIONS, Math.max(1, Math.ceil(base + zoomBonus)));
-};
-
-export const convergenceThreshold = (base: number, zoom: number): number => {
-  return Math.max(Number.EPSILON, Math.min(base, 0.25 / zoom));
-};
-
-export const needsFloat64 = (
-  width: number,
-  height: number,
-  zoom: number,
-  center: { x: number, y: number }
-): boolean => {
-  const pixelSize = 2 / (height * zoom);
-  const centerX = center.x * width / height;
-
-  return (
-    Math.fround(centerX) === Math.fround(centerX + pixelSize) ||
-    Math.fround(center.y) === Math.fround(center.y + pixelSize)
-  );
-};
+export function needsPrecise(width: number, height: number, view: View): boolean {
+  const D = Decimal.clone({ precision: 32 });
+  const pixel = new D(2).div(height).div(view.zoom);
+  const magnitude = D.max(1, new D(view.center[0]).abs().add(new D(width).div(height).div(view.zoom)), new D(view.center[1]).abs().add(new D(1).div(view.zoom)));
+  // Leave a margin for roundoff amplification during root iteration.
+  return pixel.lt(magnitude.mul('0.00001'));
+}

@@ -2,6 +2,7 @@
   "name": "newton_fractals",
   "version": "0.0.1",
   "scripts": {
+    "test": "node --import tsx --test tests/*.test.ts",
     "dev": "vite",
     "build": "tsc && vite build --base=/fractals/",
     "serve": "vite preview"
@@ -9,8 +10,12 @@
   "devDependencies": {
     "@tweakpane/core": "^2.0.5",
     "nerdamer": "^1.1.13",
+    "tsx": "^4.23.13",
     "tweakpane": "^4.0.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.0"
+  },
+  "dependencies": {
+    "decimal.js": "^10.6.0"
   }
 }

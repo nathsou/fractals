@@ -1,215 +1,137 @@
-import { Params } from "./params";
-import { convergenceThreshold, iterationLimit, needsFloat64 } from './render-settings';
-import { shaders } from "./shaders";
-import { DeepRenderRequest, DeepRenderResponse } from './deep-renderer.types';
+import type { Params } from './params';
+import { iterationLimit, needsPrecise, MAX_RENDER_ITERATIONS } from './render-settings';
+import { shaders } from './shaders';
+import type { DeepRenderRequest, DeepRenderResponse } from './deep-renderer.types';
+import type { Point, View } from './precision';
 
-export const createRenderer = (cnv: HTMLCanvasElement, params: Params) => {
-  const gl = cnv.getContext('webgl', {
-    preserveDrawingBuffer: true
-  });
-
-  if (gl === null) {
-    throw new Error('could not get webgl context');
-  }
-
-  const compileProgram = (params: Params): WebGLProgram => {
-    const vertShader = gl.createShader(gl.VERTEX_SHADER);
-
-    if (vertShader === null) {
-      throw new Error('vertShader is null');
-    }
-
-    const { vertex, fragment } = shaders(params);
-
-    // console.log(fragment);
-
-    gl.shaderSource(vertShader, vertex);
-    gl.compileShader(vertShader);
-
-    const fragShader = gl.createShader(gl.FRAGMENT_SHADER);
-    if (fragShader === null) {
-      throw new Error('fragShader is null');
-    }
-
-    gl.shaderSource(fragShader, fragment);
-    gl.compileShader(fragShader);
-
-    const prog = gl.createProgram();
-
-    if (prog === null) {
-      throw new Error('prog is null');
-    }
-
-    gl.attachShader(prog, vertShader);
-    gl.attachShader(prog, fragShader);
-
-    gl.linkProgram(prog);
-
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      console.error(gl.getProgramInfoLog(prog));
-    }
-
-    return prog;
-  };
-
-  const compileTextureProgram = (): WebGLProgram => {
-    const vertex = gl.createShader(gl.VERTEX_SHADER);
-    const fragment = gl.createShader(gl.FRAGMENT_SHADER);
-    const textureProgram = gl.createProgram();
-
-    if (vertex === null || fragment === null || textureProgram === null) {
-      throw new Error('could not create texture program');
-    }
-
-    gl.shaderSource(vertex, `
-      attribute vec2 a_pos;
-      varying vec2 v_uv;
-
-      void main() {
-        gl_Position = vec4(a_pos, 0.0, 1.0);
-        v_uv = 0.5 * (a_pos + 1.0);
+export const createRenderer = (cnv: HTMLCanvasElement, initial: Params, status: (text: string) => void) => {
+  const gl = cnv.getContext('webgl2', { preserveDrawingBuffer: true });
+  if (!gl) throw new Error('This app requires WebGL 2. Please enable hardware acceleration or use a compatible browser.');
+  const compile = (vertex: string, fragment: string) => {
+    const program = gl.createProgram()!;
+    for (const [kind, source] of [[gl.VERTEX_SHADER, vertex], [gl.FRAGMENT_SHADER, fragment]] as const) {
+      const shader = gl.createShader(kind)!;
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const message = gl.getShaderInfoLog(shader);
+        gl.deleteShader(shader); gl.deleteProgram(program);
+        throw new Error(message ?? 'Shader compilation failed');
       }
-    `);
-    gl.compileShader(vertex);
-    gl.shaderSource(fragment, `
-      precision mediump float;
-      varying vec2 v_uv;
-      uniform sampler2D u_image;
-
-      void main() {
-        gl_FragColor = texture2D(u_image, v_uv);
-      }
-    `);
-    gl.compileShader(fragment);
-    gl.attachShader(textureProgram, vertex);
-    gl.attachShader(textureProgram, fragment);
-    gl.linkProgram(textureProgram);
-
-    if (!gl.getProgramParameter(textureProgram, gl.LINK_STATUS)) {
-      throw new Error(gl.getProgramInfoLog(textureProgram) ?? 'could not link texture program');
+      gl.attachShader(program, shader);
+      gl.deleteShader(shader);
     }
-
-    return textureProgram;
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      const message = gl.getProgramInfoLog(program);
+      gl.deleteProgram(program);
+      throw new Error(message ?? 'Shader linking failed');
+    }
+    return program;
   };
+  const compileFractal = (params: Params) => { const s = shaders(params); return compile(s.vertex, s.fragment); };
+  let params = initial;
+  let program = compileFractal(params);
+  const textureProgram = compile(`#version 300 es
+    layout(location=0) in vec2 a_pos;
+    out vec2 uv;
+    void main() { gl_Position=vec4(a_pos,0,1); uv=vec2((a_pos.x+1.0)*0.5,(1.0-a_pos.y)*0.5); }
+  `, `#version 300 es
+    precision highp float;
+    in vec2 uv;
+    uniform sampler2D u_image;
+    out vec4 color;
+    void main() { color=texture(u_image,uv); }
+  `);
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-  let currentParams = params;
-  let program = compileProgram(currentParams);
-  const textureProgram = compileTextureProgram();
-  const deepWorker = new Worker(
-    new URL('./deep-renderer.worker.ts', import.meta.url),
-    { type: 'module' }
-  );
-  let renderId = 0;
-  let deepRenderTimer: number | undefined;
-
-  const bindFrame = (targetProgram: WebGLProgram) => {
-    const buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-      -1.0, -1.0,
-      1.0, -1.0,
-      -1.0, 1.0,
-      -1.0, 1.0,
-      1.0, -1.0,
-      1.0, 1.0
-    ]), gl.STATIC_DRAW);
-
-    const aPos = gl.getAttribLocation(targetProgram, 'a_pos');
-    gl.enableVertexAttribArray(aPos);
-    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-  };
-
-  const renderDeepPixels = (response: DeepRenderResponse) => {
-    if (response.id !== renderId) return;
-
+  const worker = new Worker(new URL('./deep-renderer.worker.ts', import.meta.url), { type: 'module' });
+  let id = 0, timer: number | undefined;
+  let pathHandler: (points: Point[]) => void = () => {};
+  let completedPixels = 0;
+  worker.onmessage = ({ data }: MessageEvent<DeepRenderResponse>) => {
+    if (data.id !== id) return;
+    if (data.type === 'error') { cnv.dataset.renderState = 'error'; status(`Render failed: ${data.message}`); return; }
+    if (data.type === 'path') { pathHandler(data.points); return; }
+    if (data.type === 'done') {
+      status(data.unresolved ? `Refined · ${data.unresolved} unresolved pixels (gray)` : 'Refined');
+      cnv.dataset.precision = String(data.precision);
+      cnv.dataset.renderState = 'done';
+      return;
+    }
     gl.useProgram(textureProgram);
-    gl.viewport(0, 0, cnv.width, cnv.height);
-    bindFrame(textureProgram);
-
-    const texture = gl.createTexture();
-    gl.activeTexture(gl.TEXTURE0);
+    gl.bindVertexArray(vao);
+    gl.viewport(data.x, cnv.height - data.y - data.height, data.width, data.height);
     gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA,
-      response.width,
-      response.height,
-      0,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      new Uint8Array(response.pixels)
-    );
-
-    const image = gl.getUniformLocation(textureProgram, 'u_image');
-    gl.uniform1i(image, 0);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, data.width, data.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(data.pixels));
+    gl.uniform1i(gl.getUniformLocation(textureProgram, 'u_image'), 0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
-    gl.deleteTexture(texture);
+    if (data.step === 1) completedPixels += data.width * data.height;
+    status(data.step === 1 ? `Refining detail… ${Math.floor(100 * completedPixels / (cnv.width * cnv.height))}%` : 'Refining preview…');
   };
-
-  deepWorker.onmessage = (event: MessageEvent<DeepRenderResponse>) => {
-    renderDeepPixels(event.data);
-  };
-
-  const updateParams = (newParams: Params): void => {
-    currentParams = newParams;
-    program = compileProgram(currentParams);
-  };
-
-  const render = (zoom: number, center: { x: number, y: number }) => {
-    gl.useProgram(program);
-
-    // Create the frame
-    const uRes = gl.getUniformLocation(program, 'u_res');
-    gl.uniform2f(uRes, cnv.width, cnv.height);
-
-    const uZoom = gl.getUniformLocation(program, 'u_zoom');
-    gl.uniform1f(uZoom, zoom);
-
-    const uCenter = gl.getUniformLocation(program, 'u_center');
-    gl.uniform2f(uCenter, center.x, center.y);
-
-    const maxIterations = iterationLimit(currentParams.maxIterations, zoom);
-    const epsilon = convergenceThreshold(currentParams.convergencePrecision, zoom);
-    const uMaxIterations = gl.getUniformLocation(program, 'u_max_iters');
-    gl.uniform1i(uMaxIterations, maxIterations);
-    const uEpsilon = gl.getUniformLocation(program, 'u_epsilon');
-    gl.uniform1f(uEpsilon, epsilon);
-
-    gl.viewport(0, 0, cnv.width, cnv.height);
-    bindFrame(program);
-
-    // draw
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    renderId++;
-    window.clearTimeout(deepRenderTimer);
-    if (needsFloat64(cnv.width, cnv.height, zoom, center)) {
-      const request: DeepRenderRequest = {
-        type: 'render',
-        id: renderId,
-        width: cnv.width,
-        height: cnv.height,
-        zoom,
-        center,
-        functionSource: currentParams.function.source,
-        method: currentParams.method,
-        maxIterations,
-        convergencePrecision: epsilon,
-        colorShift: currentParams.colorShift,
-        brightnessFactor: currentParams.brightnessFactor,
-      };
-      deepRenderTimer = window.setTimeout(() => deepWorker.postMessage(request), 150);
-    }
-  };
+  worker.onerror = event => { cnv.dataset.renderState = 'error'; status(`Render failed: ${event.message}`); };
 
   return {
-    render,
-    updateParams,
+    updateParams(next: Params) {
+      const replacement = compileFractal(next);
+      gl.deleteProgram(program);
+      program = replacement;
+      params = next;
+    },
+    render(view: View, selected: Point | undefined, onPath: (points: Point[]) => void) {
+      ++id;
+      window.clearTimeout(timer);
+      worker.postMessage({ type: 'cancel' });
+      pathHandler = onPath;
+      completedPixels = 0;
+      const precise = needsPrecise(cnv.width, cnv.height, view);
+      cnv.dataset.renderState = precise ? 'refining' : 'preview';
+      cnv.dataset.backend = precise ? 'arbitrary-precision' : 'webgl2';
+      gl.bindVertexArray(vao);
+      gl.viewport(0, 0, cnv.width, cnv.height);
+      // Do not show corrupted Float32 pixels as a deep-zoom result.
+      if (precise) {
+        gl.clearColor(0.055, 0.055, 0.055, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        status('Refining detail…');
+      } else {
+        gl.useProgram(program);
+        gl.uniform2f(gl.getUniformLocation(program, 'u_res'), cnv.width, cnv.height);
+        gl.uniform1f(gl.getUniformLocation(program, 'u_zoom'), Number(view.zoom));
+        gl.uniform2f(gl.getUniformLocation(program, 'u_center'), Number(view.center[0]), Number(view.center[1]));
+        gl.uniform1i(gl.getUniformLocation(program, 'u_max_iters'), Math.min(MAX_RENDER_ITERATIONS, iterationLimit(params.maxIterations, view.zoom)));
+        gl.uniform1f(gl.getUniformLocation(program, 'u_epsilon'), Math.max(1e-6, params.convergencePrecision));
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        status('');
+      }
+      if (precise) {
+        const request: DeepRenderRequest = {
+          type: 'render', id, width: cnv.width, height: cnv.height, view,
+          functionSource: params.function.source, method: params.method,
+          maxIterations: iterationLimit(params.maxIterations, view.zoom),
+          convergencePrecision: params.convergencePrecision,
+          colorShift: params.colorShift, brightnessFactor: params.brightnessFactor, selected,
+        };
+        timer = window.setTimeout(() => worker.postMessage(request), 120);
+      }
+      return precise;
+    },
+    dispose() {
+      window.clearTimeout(timer); worker.terminate();
+      gl.deleteTexture(texture); gl.deleteBuffer(buffer); gl.deleteVertexArray(vao);
+      gl.deleteProgram(program); gl.deleteProgram(textureProgram);
+    },
   };
 };

@@ -344,7 +344,7 @@ const evaluate = (expr: OptExpr, z: Complex): Complex => {
       }
     case 'complex':
       const [a] = evaluate(expr.a, z);
-      const [, b] = evaluate(expr.b, z);
+      const [b] = evaluate(expr.b, z);
 
       return [a, b];
   }
@@ -377,15 +377,15 @@ const glslOf = (expr: OptExpr): string => {
 
       switch (expr.op) {
         case '+':
-          return `${lhs} + ${rhs}`;
+          return `(${lhs} + ${rhs})`;
         case '-':
-          return `${lhs} - ${rhs}`;
+          return `(${lhs} - ${rhs})`;
         case '*':
           return `cplx_mult(${lhs}, ${rhs})`;
         case '*x':
-          return `${lhs} * ${getX(rhs)}`;
+          return `(${lhs} * ${getX(rhs)})`;
         case 'x*y':
-          return `${getX(lhs)} * ${getX(rhs)}`;
+          return `vec2(${getX(lhs)} * ${getX(rhs)}, 0.0)`;
         case '/':
           return `cplx_div(${lhs}, ${rhs})`;
         case '^':
