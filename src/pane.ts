@@ -19,22 +19,23 @@ export const createPane = () => {
     title: 'parameters'
   });
 
-  pane.addInput(params, 'f(z)', {
+  pane.addBinding(params, 'f(z)', {
     options: functions.reduce<Record<string, string>>((obj, f) => {
       obj[f] = f;
       return obj;
     }, { custom: 'custom' }),
   });
 
-  const customFunc = pane.addInput(
+  const customFunc = pane.addBinding(
     params,
     'custom function',
     { disabled: true }
   );
 
-  const errorMessage = pane.addMonitor(params, 'error', {
+  const errorMessage = pane.addBinding(params, 'error', {
+    readonly: true,
     multiline: true,
-    lineCount: 2,
+    rows: 2,
     hidden: true
   });
 
@@ -59,34 +60,32 @@ export const createPane = () => {
     };
   };
 
-  pane.addInput(params, 'method', {
+  pane.addBinding(params, 'method', {
     options: methods.reduce<Record<string, string>>((obj, f) => {
       obj[f] = f;
       return obj;
     }, {}),
   });
 
-  pane.addInput(
+  pane.addBinding(
     params,
     'color shift',
     { min: 0, max: Math.PI }
   );
 
-  pane.add
-
-  pane.addInput(
+  pane.addBinding(
     params,
     'brightness factor',
     { min: 0.01, max: 12 }
   );
 
-  pane.addInput(
+  pane.addBinding(
     params,
     'max iterations',
     { min: 1, max: 400, step: 1 }
   );
 
-  pane.addInput(
+  pane.addBinding(
     params,
     'convergence threshold',
     { min: 0.0001, max: 0.999 }
