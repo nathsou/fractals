@@ -3,6 +3,7 @@ import { iterationLimit, needsPrecise, MAX_RENDER_ITERATIONS } from './render-se
 import { shaders } from './shaders';
 import type { DeepRenderRequest, DeepRenderResponse } from './deep-renderer.types';
 import type { Point, View } from './precision';
+import { createPerturbation } from './perturbation-renderer';
 
 export const createRenderer = (cnv: HTMLCanvasElement, initial: Params, status: (text: string) => void) => {
   const gl = cnv.getContext('webgl2', { preserveDrawingBuffer: true });
@@ -41,7 +42,7 @@ export const createRenderer = (cnv: HTMLCanvasElement, initial: Params, status: 
     in vec2 uv;
     uniform sampler2D u_image;
     out vec4 color;
-    void main() { color=texture(u_image,uv); }
+    void main() { color=texture(u_image,uv); if(color.a==0.0) discard; }
   `);
   const vao = gl.createVertexArray();
   gl.bindVertexArray(vao);
@@ -61,8 +62,20 @@ export const createRenderer = (cnv: HTMLCanvasElement, initial: Params, status: 
   let id = 0, timer: number | undefined;
   let pathHandler: (points: Point[]) => void = () => {};
   let completedPixels = 0;
+  let repairTotal: number | undefined;
   let previewPixels = 0, previewStep = 0;
   let renderStarted = 0;
+  const present = (x:number,y:number,width:number,height:number,pixels:Uint8Array,displayWidth=width,displayHeight=height) => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    gl.useProgram(textureProgram);
+    gl.bindVertexArray(vao);
+    gl.viewport(x,cnv.height-y-displayHeight,displayWidth,displayHeight);
+    gl.bindTexture(gl.TEXTURE_2D,texture);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+    gl.uniform1i(gl.getUniformLocation(textureProgram,'u_image'),0);
+    gl.drawArrays(gl.TRIANGLES,0,6);
+  };
+  const perturbation=createPerturbation(gl,compile,present);
   worker.onmessage = ({ data }: MessageEvent<DeepRenderResponse>) => {
     if (data.id !== id) return;
     if (data.type === 'error') { cnv.dataset.renderState = 'error'; status(`Render failed: ${data.message}`); return; }
@@ -80,14 +93,14 @@ export const createRenderer = (cnv: HTMLCanvasElement, initial: Params, status: 
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, data.width, data.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(data.pixels));
     gl.uniform1i(gl.getUniformLocation(textureProgram, 'u_image'), 0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
-    if (data.step === 1) completedPixels += data.width * data.height;
+    if (data.step === 1) completedPixels += repairTotal === undefined ? data.width * data.height : (data.samples ?? 0);
     if (data.step !== previewStep) { previewStep = data.step; previewPixels = 0; }
     previewPixels += data.width * data.height;
     const percent = Math.floor(100 * previewPixels / (cnv.width * cnv.height));
     if (percent === 100 && !cnv.dataset.firstPreviewMs) cnv.dataset.firstPreviewMs = String(performance.now() - renderStarted);
     cnv.dataset.refinementStep = String(data.step);
     cnv.dataset.passProgress = String(percent);
-    status(data.step === 1 ? `Refining detail… ${Math.floor(100 * completedPixels / (cnv.width * cnv.height))}%` : `Refining preview (${data.step}px)… ${percent}%`);
+    status(data.step === 1 ? `${repairTotal === undefined ? 'Refining detail' : 'Recovering uncertain pixels'}… ${Math.floor(100 * completedPixels / (repairTotal ?? (cnv.width * cnv.height)))}%` : `Refining preview (${data.step}px)… ${percent}%`);
   };
   worker.onerror = event => { cnv.dataset.renderState = 'error'; status(`Render failed: ${event.message}`); };
 
@@ -101,12 +114,17 @@ export const createRenderer = (cnv: HTMLCanvasElement, initial: Params, status: 
     render(view: View, selected: Point | undefined, onPath: (points: Point[]) => void) {
       ++id;
       window.clearTimeout(timer);
+      perturbation.cancel();
       worker.postMessage({ type: 'cancel' });
       pathHandler = onPath;
       completedPixels = 0;
+      repairTotal = undefined;
       previewPixels = 0; previewStep = 0;
       renderStarted = performance.now();
       delete cnv.dataset.firstPreviewMs;
+      delete cnv.dataset.gpuPixels;
+      delete cnv.dataset.repairPixels;
+      delete cnv.dataset.referenceCount;
       const precise = needsPrecise(cnv.width, cnv.height, view);
       cnv.dataset.renderState = precise ? 'refining' : 'preview';
       cnv.dataset.backend = precise ? 'arbitrary-precision' : 'webgl2';
@@ -135,12 +153,34 @@ export const createRenderer = (cnv: HTMLCanvasElement, initial: Params, status: 
           convergencePrecision: params.convergencePrecision,
           colorShift: params.colorShift, brightnessFactor: params.brightnessFactor, selected,
         };
-        timer = window.setTimeout(() => worker.postMessage(request), 120);
+        timer = window.setTimeout(() => {
+          if (!perturbation.supports(request)) { worker.postMessage(request); return; }
+          cnv.dataset.backend='perturbation';
+          status('Computing high-precision reference… previous preview');
+          perturbation.render(request,()=>{
+            cnv.dataset.firstPreviewMs=String(performance.now()-renderStarted);
+            status('GPU preview · refining detail…');
+          },(valid,references,precision)=>{
+            cnv.dataset.precision=String(precision);
+            cnv.dataset.referenceCount=String(references);
+            cnv.dataset.gpuPixels=String(valid);
+            status(`GPU detail: ${Math.floor(valid/(cnv.width*cnv.height)*100)}% · rebasing uncertain pixels…`);
+          },mask=>{
+            const repairs=mask.reduce((a,b)=>a+b,0);
+            repairTotal=repairs===mask.length?undefined:repairs;
+            cnv.dataset.repairPixels=String(repairs);
+            if(!repairs && !selected) {cnv.dataset.renderState='done';status('Refined · GPU perturbation');return;}
+            // If no GPU sample was safe, retain the bounded coarse preview
+            // of the general backend. Otherwise recover only uncertain pixels.
+            worker.postMessage({...request,repairMask:repairs===mask.length?undefined:mask});
+          });
+        }, 120);
       }
       return precise;
     },
     dispose() {
       window.clearTimeout(timer); worker.terminate();
+      perturbation.dispose();
       gl.deleteTexture(texture); gl.deleteBuffer(buffer); gl.deleteVertexArray(vao);
       gl.deleteProgram(program); gl.deleteProgram(textureProgram);
     },

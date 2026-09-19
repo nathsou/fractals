@@ -32,7 +32,7 @@ try {
     if (performance.now() - start > 30000) throw new Error('Worker rendering timed out');
     await new Promise(resolve => setTimeout(resolve, 50));
   }
-  assert(canvas.dataset.backend === 'arbitrary-precision', 'Wrong rendering backend');
+  assert(canvas.dataset.backend === 'perturbation', 'Wrong rendering backend');
   const pixels = new Uint8Array(8 * 4 * 4);
   gl.readPixels(0, 0, 8, 4, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
   assert(pixels[3] === 255 && pixels[31] === 255, 'Missing worker texture data');
@@ -60,12 +60,17 @@ try {
   gl.readPixels(1800, 1200, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, after);
   assert(before.every((v, i) => v === after[i]), 'Deep transition erased the previous frame');
   const previewStart = performance.now();
-  while (!canvas.dataset.firstPreviewMs) {
+  const previewWatchdog=setTimeout(()=>renderer.dispose(),31000);
+  while (!canvas.dataset.firstPreviewMs || canvas.dataset.repairPixels===undefined) {
     if (finalStatus.startsWith('Render failed')) throw new Error(finalStatus);
-    if (performance.now() - previewStart > 20000) throw new Error('Retina coarse preview exceeded 20 seconds');
+    if (performance.now() - previewStart > 30000) throw new Error('Retina GPU passes exceeded 30 seconds');
     await new Promise(resolve => setTimeout(resolve, 25));
   }
   const firstPreviewMs = Number(canvas.dataset.firstPreviewMs);
+  const coverage = Number(canvas.dataset.gpuPixels)/(canvas.width*canvas.height);
+  assert(coverage>0.9,'Retina GPU coverage below 90%');
+  const gpuElapsed=performance.now()-previewStart;
+  clearTimeout(previewWatchdog);
   renderer.dispose();
 
   await new Promise<void>((resolve, reject) => {
@@ -86,5 +91,20 @@ try {
     worker.postMessage({ type: 'cancel' });
     worker.postMessage(request);
   });
-  output.textContent = `PASS: 36 shader variants, deep worker at 1e40, distinct basin pixels, texture orientation, worker cancellation and final tile coverage. Retina 3752×2500 first full preview: ${Math.round(firstPreviewMs)}ms; previous frame preserved.`;
+  await new Promise<void>((resolve,reject)=>{
+    const worker=new Worker(new URL('../src/deep-renderer.worker.ts',import.meta.url),{type:'module'});
+    let painted=0;
+    const timeout=setTimeout(()=>{worker.terminate();reject(new Error('Sparse recovery timed out'));},10000);
+    worker.onmessage=({data}:MessageEvent<DeepRenderResponse>)=>{
+      if(data.type==='tile') painted+=new Uint8Array(data.pixels).filter((v,i)=>i%4===3 && v===255).length;
+      if(data.type==='error' || data.type==='done') {
+        clearTimeout(timeout);worker.terminate();
+        if(data.type==='error') reject(new Error(data.message));
+        else if(painted!==1) reject(new Error(`Sparse recovery painted ${painted} pixels instead of 1`));
+        else resolve();
+      }
+    };
+    worker.postMessage({...request,id:3,repairMask:new Uint8Array([1,0,0,0,0,0,0,0])});
+  });
+  output.textContent = `PASS: 36 shader variants, deep rendering at 1e40, distinct basin pixels, texture orientation, worker cancellation, sparse recovery and final tile coverage. Retina 3752×2500 whole-view preview: ${Math.round(firstPreviewMs)}ms; GPU coverage ${(coverage*100).toFixed(2)}% in ${Math.round(gpuElapsed)}ms; previous frame preserved.`;
 } catch (error) { output.textContent = `FAIL: ${error}`; throw error; }

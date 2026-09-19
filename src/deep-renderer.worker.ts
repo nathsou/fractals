@@ -27,9 +27,10 @@ self.onmessage = (event: MessageEvent<DeepRenderRequest | { type: 'cancel' }>) =
       const result = orbit(sampler.math, request.selected, request.method, request.maxIterations, String(request.convergencePrecision), true);
       scope.postMessage({ type: 'path', id: request.id, points: result.path });
     }
-    const passes = refinementSteps(request.width, request.height);
+    const passes = request.repairMask ? [1] : refinementSteps(request.width, request.height);
     let pass = 0, x = 0, y = 0, unresolved = 0;
     let block = 0;
+    let samples = 0;
     let pixels: Uint8ClampedArray<ArrayBuffer> | undefined;
     const next = () => {
       if (token !== generation) return;
@@ -44,8 +45,10 @@ self.onmessage = (event: MessageEvent<DeepRenderRequest | { type: 'cancel' }>) =
         const deadline = performance.now() + 12;
         while (block < columns * rows) {
           const i = (block % columns) * step, j = Math.floor(block / columns) * step;
+          if (request.repairMask && !request.repairMask[(y+j)*request.width+x+i]) { block++; continue; }
           const blockWidth = Math.min(step, width - i), blockHeight = Math.min(step, height - j);
           const result = sampler.sample(x + i + blockWidth / 2, y + j + blockHeight / 2);
+          samples++;
           const rgb = result.converged ? color(sampler.math.D.atan2(result.root[1], result.root[0]).toNumber(), result.iterations, request) : [24,24,24];
           if (step === 1 && !result.converged) unresolved++;
           for (let by = 0; by < blockHeight; by++) for (let bx = 0; bx < blockWidth; bx++) {
@@ -54,8 +57,8 @@ self.onmessage = (event: MessageEvent<DeepRenderRequest | { type: 'cancel' }>) =
           block++;
           if (performance.now() >= deadline) { schedule(next); return; }
         }
-        scope.postMessage({ type: 'tile', id: request.id, x, y, width, height, pixels: pixels.buffer, step }, [pixels.buffer]);
-        pixels = undefined; block = 0;
+        if(samples) scope.postMessage({ type: 'tile', id: request.id, x, y, width, height, pixels: pixels.buffer, step, samples }, [pixels.buffer]);
+        pixels = undefined; block = 0; samples = 0;
         x += width;
         if (x === request.width) { x = 0; y += height; }
         if (y === request.height && pass < passes.length - 1) { pass++; x = 0; y = 0; }
