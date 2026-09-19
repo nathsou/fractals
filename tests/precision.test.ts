@@ -5,6 +5,7 @@ import { compilePrecise } from '../src/precise-function';
 import { adaptiveSampler, orbit, pixelPoint } from '../src/precise-orbit';
 import { needsPrecise } from '../src/render-settings';
 import { functions } from '../src/functions';
+import { refinementSteps } from '../src/refinement';
 
 test('camera preserves distinct pixels and sub-Float64 pans at 1e100 zoom', () => {
   const camera = new Camera();
@@ -95,4 +96,24 @@ test('exceeding the precision budget leaves the camera unchanged', () => {
   const original = camera.snapshot();
   assert.throws(() => camera.zoomAt(1, 1, 800, 600, '1e1000'), /precision limit/);
   assert.deepEqual(camera.snapshot(), original);
+});
+
+test('first refinement pass covers Retina viewports in at most 256 samples', () => {
+  for (const [width, height] of [[3752, 2500], [3840, 2160], [750, 1334], [8, 4]]) {
+    const steps = refinementSteps(width, height);
+    assert.ok(Math.ceil(width / steps[0]) * Math.ceil(height / steps[0]) <= 256);
+    assert.equal(steps.at(-1), 1);
+    for (let i = 1; i < steps.length; i++) assert.equal(steps[i - 1], steps[i] * 2);
+    let area = 0, samples = 0;
+    const step = steps[0];
+    for (let y = 0; y < height; y += Math.max(16, step)) {
+      for (let x = 0; x < width; x += Math.max(32, step)) {
+        const w = Math.min(Math.max(32, step), width - x), h = Math.min(Math.max(16, step), height - y);
+        area += w * h;
+        samples += Math.ceil(w / step) * Math.ceil(h / step);
+      }
+    }
+    assert.equal(area, width * height);
+    assert.ok(samples <= 256);
+  }
 });

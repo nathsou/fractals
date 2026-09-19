@@ -61,6 +61,8 @@ export const createRenderer = (cnv: HTMLCanvasElement, initial: Params, status: 
   let id = 0, timer: number | undefined;
   let pathHandler: (points: Point[]) => void = () => {};
   let completedPixels = 0;
+  let previewPixels = 0, previewStep = 0;
+  let renderStarted = 0;
   worker.onmessage = ({ data }: MessageEvent<DeepRenderResponse>) => {
     if (data.id !== id) return;
     if (data.type === 'error') { cnv.dataset.renderState = 'error'; status(`Render failed: ${data.message}`); return; }
@@ -79,7 +81,13 @@ export const createRenderer = (cnv: HTMLCanvasElement, initial: Params, status: 
     gl.uniform1i(gl.getUniformLocation(textureProgram, 'u_image'), 0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     if (data.step === 1) completedPixels += data.width * data.height;
-    status(data.step === 1 ? `Refining detail… ${Math.floor(100 * completedPixels / (cnv.width * cnv.height))}%` : 'Refining preview…');
+    if (data.step !== previewStep) { previewStep = data.step; previewPixels = 0; }
+    previewPixels += data.width * data.height;
+    const percent = Math.floor(100 * previewPixels / (cnv.width * cnv.height));
+    if (percent === 100 && !cnv.dataset.firstPreviewMs) cnv.dataset.firstPreviewMs = String(performance.now() - renderStarted);
+    cnv.dataset.refinementStep = String(data.step);
+    cnv.dataset.passProgress = String(percent);
+    status(data.step === 1 ? `Refining detail… ${Math.floor(100 * completedPixels / (cnv.width * cnv.height))}%` : `Refining preview (${data.step}px)… ${percent}%`);
   };
   worker.onerror = event => { cnv.dataset.renderState = 'error'; status(`Render failed: ${event.message}`); };
 
@@ -96,16 +104,19 @@ export const createRenderer = (cnv: HTMLCanvasElement, initial: Params, status: 
       worker.postMessage({ type: 'cancel' });
       pathHandler = onPath;
       completedPixels = 0;
+      previewPixels = 0; previewStep = 0;
+      renderStarted = performance.now();
+      delete cnv.dataset.firstPreviewMs;
       const precise = needsPrecise(cnv.width, cnv.height, view);
       cnv.dataset.renderState = precise ? 'refining' : 'preview';
       cnv.dataset.backend = precise ? 'arbitrary-precision' : 'webgl2';
       gl.bindVertexArray(vao);
       gl.viewport(0, 0, cnv.width, cnv.height);
-      // Do not show corrupted Float32 pixels as a deep-zoom result.
+      // Preserve the previous image until the new coarse pass arrives. The
+      // status explicitly identifies this as a transitional preview, not a
+      // finished image at the new coordinates.
       if (precise) {
-        gl.clearColor(0.055, 0.055, 0.055, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        status('Refining detail…');
+        status('Updating view… previous preview');
       } else {
         gl.useProgram(program);
         gl.uniform2f(gl.getUniformLocation(program, 'u_res'), cnv.width, cnv.height);

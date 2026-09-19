@@ -20,7 +20,10 @@ Function values and first/second derivatives are evaluated together using automa
 differentiation, retaining literal digits and supporting the same expression syntax.
 Integer powers use multiplication rather than polar logarithms.
 
-Deep views refine through 16-, 4-, and 1-pixel sampling passes. Each sample is
+Deep views start with at most 16×16 samples covering the entire viewport, then
+halve the sampling block size each pass down to individual pixels. The previous
+frame stays visible while the new preview is computed; a status label identifies
+it as the previous preview until replacement tiles arrive. Each sample is
 recomputed with 24 additional decimal digits and a larger iteration budget. Root
 disagreement or lack of convergence triggers further retries. This is a numerical
 stability check, not a mathematical proof of basin membership at a boundary.

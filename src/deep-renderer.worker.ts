@@ -1,5 +1,6 @@
 import { adaptiveSampler, orbit } from './precise-orbit';
 import type { DeepRenderRequest, DeepRenderResponse } from './deep-renderer.types';
+import { refinementSteps } from './refinement';
 
 const scope = self as unknown as { postMessage(message: DeepRenderResponse, transfer?: Transferable[]): void };
 let generation = 0;
@@ -26,7 +27,7 @@ self.onmessage = (event: MessageEvent<DeepRenderRequest | { type: 'cancel' }>) =
       const result = orbit(sampler.math, request.selected, request.method, request.maxIterations, String(request.convergencePrecision), true);
       scope.postMessage({ type: 'path', id: request.id, points: result.path });
     }
-    const passes = [16, 4, 1];
+    const passes = refinementSteps(request.width, request.height);
     let pass = 0, x = 0, y = 0, unresolved = 0;
     let block = 0;
     let pixels: Uint8ClampedArray<ArrayBuffer> | undefined;
@@ -34,7 +35,10 @@ self.onmessage = (event: MessageEvent<DeepRenderRequest | { type: 'cancel' }>) =
       if (token !== generation) return;
       try {
         const step = passes[pass];
-        const width = Math.min(32, request.width - x), height = Math.min(16, request.height - y);
+        // Coarse tiles must be at least one complete sample block. Otherwise a
+        // large initial step still evaluates a sample for every tiny tile.
+        const width = Math.min(Math.max(32, step), request.width - x);
+        const height = Math.min(Math.max(16, step), request.height - y);
         pixels ??= new Uint8ClampedArray(new ArrayBuffer(width * height * 4));
         const columns = Math.ceil(width / step), rows = Math.ceil(height / step);
         const deadline = performance.now() + 12;

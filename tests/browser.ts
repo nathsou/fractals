@@ -49,6 +49,23 @@ try {
   gl.readPixels(0, 0, 8, 4, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
   assert(pixels[1] > pixels[0], 'Bottom row should converge to -i');
   assert(pixels[96] > pixels[97], 'Top row should converge to +i');
+  // Realistic Retina regression: an 8×4 fixture cannot expose a preview that
+  // only paints a few rows of a multi-million-pixel framebuffer in minutes.
+  canvas.width = 3752; canvas.height = 2500;
+  renderer.updateParams({ ...params, function: funcOf('z^3-1') });
+  renderer.render({ center: ['0','0'], zoom: '1' }, undefined, () => {});
+  const before = new Uint8Array(4), after = new Uint8Array(4);
+  gl.readPixels(1800, 1200, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, before);
+  renderer.render({ center: ['0','0'], zoom: '1000' }, undefined, () => {});
+  gl.readPixels(1800, 1200, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, after);
+  assert(before.every((v, i) => v === after[i]), 'Deep transition erased the previous frame');
+  const previewStart = performance.now();
+  while (!canvas.dataset.firstPreviewMs) {
+    if (finalStatus.startsWith('Render failed')) throw new Error(finalStatus);
+    if (performance.now() - previewStart > 20000) throw new Error('Retina coarse preview exceeded 20 seconds');
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  const firstPreviewMs = Number(canvas.dataset.firstPreviewMs);
   renderer.dispose();
 
   await new Promise<void>((resolve, reject) => {
@@ -69,5 +86,5 @@ try {
     worker.postMessage({ type: 'cancel' });
     worker.postMessage(request);
   });
-  output.textContent = 'PASS: 36 shader variants, deep worker at 1e40, distinct basin pixels, texture orientation, worker cancellation and final tile coverage.';
+  output.textContent = `PASS: 36 shader variants, deep worker at 1e40, distinct basin pixels, texture orientation, worker cancellation and final tile coverage. Retina 3752×2500 first full preview: ${Math.round(firstPreviewMs)}ms; previous frame preserved.`;
 } catch (error) { output.textContent = `FAIL: ${error}`; throw error; }
