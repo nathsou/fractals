@@ -1,5 +1,4 @@
 import { Method, Params } from "./params";
-import { MAX_RENDER_ITERATIONS } from './render-settings';
 
 type MethodImpl = (funcName: string, params: Params) => string;
 
@@ -10,17 +9,16 @@ const methodsMap: Record<Method, MethodImpl> = {
       float n = 0.0;
 
       for (int j = 0; j < MAX_ITERS; j++) {
-        if (j >= u_max_iters) break;
         vec2 delta = cplx_div(${params.function.f('z')}, ${params.function.diff(1)('z')});
         z -= delta;
         n++;
 
         if (length(delta) <= eps) {
-          return vec3(z, n);
+          break;
         }
       }
 
-      return vec3(z, -n);
+      return vec3(z, n);
     }
   `,
   halley: (name, params) => `
@@ -29,7 +27,6 @@ const methodsMap: Record<Method, MethodImpl> = {
       float n = 0.0;
 
       for (int j = 0; j < MAX_ITERS; j++) {
-        if (j >= u_max_iters) break;
         vec2 f_z = ${params.function.f('z')};
         vec2 f_prime_z = ${params.function.diff(1)('z')};
         vec2 f_prime_prime_z = ${params.function.diff(2)('z')};
@@ -40,11 +37,11 @@ const methodsMap: Record<Method, MethodImpl> = {
         n++;
 
         if (length(delta) <= eps) {
-          return vec3(z, n);
+          break;
         }
       }
 
-      return vec3(z, -n);
+      return vec3(z, n);
     }
   `,
   secant: (name, params) => `
@@ -56,7 +53,6 @@ const methodsMap: Record<Method, MethodImpl> = {
       float n = 0.0;
 
       for (int j = 0; j < MAX_ITERS; j++) {
-        if (j >= u_max_iters) break;
         vec2 top = z_n_minus_1 - z_n_minus_2;
         vec2 f_z_n_minus_1 = ${params.function.f('z_n_minus_1')};
         vec2 bot = f_z_n_minus_1 - ${params.function.f('z_n_minus_2')};
@@ -66,11 +62,11 @@ const methodsMap: Record<Method, MethodImpl> = {
         n++;
 
         if (length(delta) <= eps) {
-          return vec3(z_n_minus_1, n);
+          break;
         }
       }
 
-      return vec3(z_n_minus_1, -n);
+      return vec3(z_n_minus_1, n);
     }`,
   steffensen: (name, params) => `
     vec3 ${name}(vec2 z0, float eps) {
@@ -78,7 +74,6 @@ const methodsMap: Record<Method, MethodImpl> = {
       float n = 0.0;
 
       for (int j = 0; j < MAX_ITERS; j++) {
-        if (j >= u_max_iters) break;
         vec2 f_z = ${params.function.f('z')};
         vec2 g_z = cplx_div(${params.function.f('z + f_z')}, f_z) - vec2(1.0, 0.0);
         vec2 delta = cplx_div(f_z, g_z);
@@ -86,42 +81,38 @@ const methodsMap: Record<Method, MethodImpl> = {
         n++;
 
         if (length(delta) <= eps) {
-          return vec3(z, n);
+          break;
         }
       }
 
-      return vec3(z, -n);
+      return vec3(z, n);
     }
   `
 };
 
 export const shaders = (params: Params) => ({
-  vertex: `#version 300 es
+  vertex: `        
     precision highp float;
 
-    layout(location=0) in vec2 a_pos;
+    attribute vec2 a_pos;
     uniform vec2 u_res;
     uniform float u_zoom;
     uniform vec2 u_center;
-    out vec2 v_pos;
+    varying vec2 v_pos;
     
     void main() {
       gl_Position = vec4(a_pos, 0, 1);
-      v_pos = a_pos;
+      v_pos = (1.0 / u_zoom) * a_pos + u_center;
+      v_pos.x *= u_res.x / u_res.y;
     }
   `,
-  fragment: `#version 300 es
+  fragment: `
     precision highp float;
 
-    #define MAX_ITERS ${MAX_RENDER_ITERATIONS}
+    #define MAX_ITERS ${params.maxIterations}
+    #define ETA ${params.convergencePrecision}
 
-    in vec2 v_pos;
-    out vec4 fragmentColor;
-    uniform vec2 u_res;
-    uniform float u_zoom;
-    uniform vec2 u_center;
-    uniform int u_max_iters;
-    uniform float u_epsilon;
+    varying vec2 v_pos;
 
     vec2 cplx_mult(vec2 a, vec2 b) {
       return vec2(a.x * b.x - a.y * b.y, a.y * b.x + a.x * b.y);
@@ -141,14 +132,6 @@ export const shaders = (params: Params) => ({
     }
 
     vec2 cplx_pow_scalar(vec2 z, float p) {
-      if (p >= 0.0 && p <= 64.0 && floor(p) == p) {
-        vec2 result = vec2(1.0, 0.0);
-        for (int i = 0; i < 64; i++) {
-          if (float(i) >= p) break;
-          result = cplx_mult(result, z);
-        }
-        return result;
-      }
       float c_p = pow(length(z), p);
       float angle = p * cplx_arg(z);
       return vec2(c_p * cos(angle), c_p * sin(angle));
@@ -169,11 +152,44 @@ export const shaders = (params: Params) => ({
     }
 
     vec2 cplx_sin(vec2 z) {
-      return vec2(sin(z.x) * cosh(z.y), cos(z.x) * sinh(z.y));
+      vec2 z2 = cplx_mult(z, z);
+      vec2 z3 = cplx_mult(z, z2);
+      vec2 z5 = cplx_mult(z3, z2);
+      vec2 z7 = cplx_mult(z5, z2);
+      vec2 z9 = cplx_mult(z7, z2);
+      vec2 z11 = cplx_mult(z9, z2);
+      vec2 z13 = cplx_mult(z11, z2);
+      vec2 z15 = cplx_mult(z13, z2);
+
+      vec2 t2 = cplx_div(z3, vec2(6.0, 0.0));
+      vec2 t3 = cplx_div(z5, vec2(120.0, 0.0));
+      vec2 t4 = cplx_div(z7, vec2(5040.0, 0.0));
+      vec2 t5 = cplx_div(z9, vec2(362880.0, 0.0));
+      vec2 t6 = cplx_div(z11, vec2(39916800.0, 0.0));
+      vec2 t7 = cplx_div(z13, vec2(6227020800.0, 0.0));
+      vec2 t8 = cplx_div(z15, vec2(1307674368000.0, 0.0));
+
+      return z - t2 + t3 - t4 + t5 - t6 + t7 - t8;
     }
 
     vec2 cplx_cos(vec2 z) {
-      return vec2(cos(z.x) * cosh(z.y), -sin(z.x) * sinh(z.y));
+      vec2 z2 = cplx_mult(z, z);
+      vec2 z4 = cplx_mult(z2, z2);
+      vec2 z6 = cplx_mult(z4, z2);
+      vec2 z8 = cplx_mult(z6, z2);
+      vec2 z10 = cplx_mult(z8, z2);
+      vec2 z12 = cplx_mult(z10, z2);
+      vec2 z14 = cplx_mult(z12, z2);
+
+      vec2 t2 = cplx_div(z2, vec2(2.0, 0.0));
+      vec2 t3 = cplx_div(z4, vec2(24.0, 0.0));
+      vec2 t4 = cplx_div(z6, vec2(720.0, 0.0));
+      vec2 t5 = cplx_div(z8, vec2(40320.0, 0.0));
+      vec2 t6 = cplx_div(z10, vec2(3628800.0, 0.0));
+      vec2 t7 = cplx_div(z12, vec2(479001600.0, 0.0));
+      vec2 t8 = cplx_div(z14, vec2(87178291200.0, 0.0));
+
+      return z - t2 + t3 - t4 + t5 - t6 + t7 - t8;
     }
 
     vec2 cplx_exp(vec2 z) {
@@ -190,8 +206,7 @@ export const shaders = (params: Params) => ({
 
     vec3 root_color(vec2 z, float n) {
       float p = float(${params.brightnessFactor}); // color brightness factor
-      float progress = n / 50.0;
-      float m = 0.2 + 0.8 * exp(p * progress);
+      float m = 1.0 - (exp(p * n / float(MAX_ITERS)) - 1.0) / (exp(p) - 1.0);
       float hue = cplx_arg(z) / 6.2831853 + float(${params.colorShift});
 
       return hsv2rgb(vec3(hue, 1.0, m));
@@ -199,14 +214,14 @@ export const shaders = (params: Params) => ({
 
     void main() {
       vec3 color = vec3(0.0);
-      vec2 z = (2.0 * gl_FragCoord.xy - u_res) / (u_res.y * u_zoom) + u_center;
-      vec3 r = find_root(z, u_epsilon);
+      vec3 r = find_root(v_pos, ETA);
 
       if (r.z > 0.0) {
-        color = root_color(vec2(r.x, r.y), r.z);
+        float m = r.z / float(MAX_ITERS);
+        color = mix(root_color(vec2(r.x, r.y), r.z), vec3(0.0), m);
       }
   
-      fragmentColor = vec4(color, 1.0);
+      gl_FragColor = vec4(color, 1.0);
     }
   `
 });

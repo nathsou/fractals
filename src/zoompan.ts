@@ -4,6 +4,7 @@ export type PinchListener = (centerX: number, centerY: number, newScale: number)
 export const createPinchZoomHandler = () => {
   const pointers = new Map<number, PointerEvent>();
   let lastDist = 0;
+  let lastScale = 1;
   let lastX = 0;
   let lastY = 0;
 
@@ -46,7 +47,7 @@ export const createPinchZoomHandler = () => {
       }
 
 
-      const scale = lastDist > 0 ? dist / lastDist : 1;
+      const scale = lastScale * (dist / lastDist);
 
       const centerX = (e2.clientX + e1.clientX) / 2;
       const centerY = (e2.clientY + e1.clientY) / 2;
@@ -56,6 +57,7 @@ export const createPinchZoomHandler = () => {
       }
 
       lastDist = dist;
+      lastScale = scale;
     }
   };
 
